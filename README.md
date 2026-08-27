@@ -68,8 +68,8 @@ Dokumentasi proyek ini disusun secara komprehensif ke dalam folder [`docs/`](./d
 ### 2. Instalasi & Pengembangan Lokal
 ```bash
 # Clone repository
-git clone https://github.com/USERNAME/qris-kas.git
-cd qris-kas
+git clone https://github.com/Ramadani1t/QRISKas.git
+cd QRISKas
 
 # Instalasi dependensi
 npm install
