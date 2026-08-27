@@ -1,0 +1,15 @@
+{
+  "name": "qris-nominal-scanner",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "esbuild src/app.js --bundle --minify --outfile=public/app.js",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "wrangler": "^4.24.3"
+  }
+}

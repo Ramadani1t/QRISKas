@@ -1,0 +1,22 @@
+name = "qris-nominal-scanner"
+main = "worker.js"
+compatibility_date = "2026-07-20"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+
+[[r2_buckets]]
+binding = "RECEIPTS"
+bucket_name = "qris-receips"
+
+[vars]
+# Ganti dengan custom domain publik bucket R2, tanpa garis miring di belakang.
+R2_PUBLIC_URL = "https://qrisdata.tahunyakrispiya.my.id"
+
+
+# Domain aplikasi scanner. Cloudflare akan membuat DNS dan sertifikatnya.
+[[routes]]
+pattern = "scan.tahunyakrispiya.my.id"
+custom_domain = true

@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Cloudflare Wrangler Local State & Secrets
+.wrangler/
+.wrangler-dry-run/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+
+# Local sample photos & private receipts (Privacy & Data Protection)
+contoh/
+eng.traineddata
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
+*.log
