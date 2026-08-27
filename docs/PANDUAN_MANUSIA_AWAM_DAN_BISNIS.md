@@ -1,6 +1,22 @@
 # 📖 Panduan Bahasa Manusia: Cara Kerja & Penggunaan QRIS Kas
 
+<p align="center">
+  <img src="assets/qris_logo_banner.jpg" alt="Tahunya Krispiya - QRIS Kas Banner" width="100%" style="border-radius: 14px; max-width: 800px;" />
+</p>
+
 > **Dokumen ini dibuat khusus dengan bahasa sehari-hari tanpa istilah teknis yang rumit, agar pemilik toko, manajer operasional, kasir, dan siapa pun dapat langsung memahami dan menggunakan sistem ini dalam 3 menit.**
+
+---
+
+## 📱 Gambar Tampilan Aplikasi di HP Kasir
+
+<p align="center">
+  <img src="assets/qris_scanner_preview.jpg" alt="Layar Scanner QRIS Kas" width="45%" style="border-radius: 12px; margin-right: 10px;" />
+  <img src="assets/qris_history_preview.jpg" alt="Layar Riwayat QRIS Kas" width="45%" style="border-radius: 12px;" />
+</p>
+<p align="center">
+  <em>(Kiri: Layar Scan saat jepret bukti pembayaran | Kanan: Layar Riwayat & Rekap Harian)</em>
+</p>
 
 ---
 

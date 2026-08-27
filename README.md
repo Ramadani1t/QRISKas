@@ -1,17 +1,35 @@
 # 🥟 QRIS Kas - Tahunya Krispiya
 ### *Ultra-Fast Serverless QRIS Payment Logger & Cashier PWA*
 
-[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
-[![Cloudflare R2](https://img.shields.io/badge/Cloudflare-R2_Storage-yellow?style=for-the-badge&logo=cloudflare&logoColor=white)](https://www.cloudflare.com/developer-platform/r2/)
-[![JavaScript](https://img.shields.io/badge/JavaScript-ES2022-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)](https://developer.mozilla.org/)
-[![PWA Ready](https://img.shields.io/badge/PWA-Mobile_Ready-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
-[![Status](https://img.shields.io/badge/Status-Live_Production-00C853?style=for-the-badge)](https://scan.tahunyakrispiya.my.id)
+<p align="center">
+  <img src="docs/assets/qris_logo_banner.jpg" alt="Tahunya Krispiya - QRIS Kas Banner" width="100%" style="border-radius: 14px; max-width: 850px;" />
+</p>
+
+<p align="center">
+  <a href="https://workers.cloudflare.com/"><img src="https://img.shields.io/badge/Cloudflare-Workers-F38020?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Cloudflare Workers" /></a>
+  <a href="https://www.cloudflare.com/developer-platform/r2/"><img src="https://img.shields.io/badge/Cloudflare-R2_Storage-yellow?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Cloudflare R2" /></a>
+  <a href="https://developer.mozilla.org/"><img src="https://img.shields.io/badge/JavaScript-ES2022-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" alt="JavaScript" /></a>
+  <a href="https://web.dev/progressive-web-apps/"><img src="https://img.shields.io/badge/PWA-Mobile_Ready-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA Ready" /></a>
+  <a href="https://scan.tahunyakrispiya.my.id"><img src="https://img.shields.io/badge/Status-Live_Production-00C853?style=for-the-badge" alt="Status Live" /></a>
+</p>
 
 **QRIS Kas** adalah sub-aplikasi kasir digital dari ekosistem **Tahunya Krispiya** yang dirancang untuk memotret, mencatat, dan mengarsipkan bukti pembayaran QRIS secara instan di gerai fisik. Dibangun di atas infrastruktur serverless global Cloudflare Workers & R2 Storage dengan performa tinggi dan nol biaya server bulanan.
 
 🌐 **Website Utama**: [tahunyakrispiya.my.id](https://tahunyakrispiya.my.id)  
 📱 **Aplikasi Kasir**: [scan.tahunyakrispiya.my.id](https://scan.tahunyakrispiya.my.id)  
 🗄️ **CDN Bukti Foto**: `https://qrisdata.tahunyakrispiya.my.id`
+
+---
+
+## 📱 Tampilan Antarmuka (UI Preview)
+
+<p align="center">
+  <img src="docs/assets/qris_scanner_preview.jpg" alt="Tampilan Scanner Kamera QRIS Kas" width="45%" style="border-radius: 12px; margin-right: 12px;" />
+  <img src="docs/assets/qris_history_preview.jpg" alt="Tampilan Riwayat & Rekap Transaksi QRIS Kas" width="45%" style="border-radius: 12px;" />
+</p>
+<p align="center">
+  <em>(Kiri: Mode Jepret Scanner Kamera Instan | Kanan: Mode Riwayat & Rekap Harian WhatsApp)</em>
+</p>
 
 ---
 
