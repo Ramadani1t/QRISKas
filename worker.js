@@ -158,6 +158,7 @@ export default {
         const form = await request.formData();
         const image = form.get("image");
         const amount = safeAmount(form.get("amount"));
+        const customDate = form.get("customDate");
         const customTime = form.get("customTime");
         
         if (!(image instanceof File) || !image.type.startsWith("image/")) return json({ error: "Foto tidak valid." }, 400);
@@ -165,20 +166,34 @@ export default {
         if (image.size > 2_000_000) return json({ error: "Foto maksimal 2 MB." }, 413);
 
         const p = jakartaParts();
-        let savedAt = `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}+07:00`;
-        
-        if (customTime) {
-          const match = String(customTime).trim().match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
-          if (match) {
-            const hh = match[1].padStart(2, "0");
-            const mm = match[2].padStart(2, "0");
-            const ss = (match[3] || "00").padStart(2, "0");
-            savedAt = `${p.year}-${p.month}-${p.day}T${hh}:${mm}:${ss}+07:00`;
+        let targetYear = p.year;
+        let targetMonth = p.month;
+        let targetDay = p.day;
+        let targetHour = p.hour;
+        let targetMinute = p.minute;
+        let targetSecond = p.second;
+
+        if (customDate) {
+          const dMatch = String(customDate).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          if (dMatch) {
+            targetYear = dMatch[1];
+            targetMonth = dMatch[2];
+            targetDay = dMatch[3];
           }
         }
 
+        if (customTime) {
+          const tMatch = String(customTime).trim().match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
+          if (tMatch) {
+            targetHour = tMatch[1].padStart(2, "0");
+            targetMinute = tMatch[2].padStart(2, "0");
+            targetSecond = (tMatch[3] || targetSecond).padStart(2, "0");
+          }
+        }
+
+        const savedAt = `${targetYear}-${targetMonth}-${targetDay}T${targetHour}:${targetMinute}:${targetSecond}+07:00`;
         const id = crypto.randomUUID().slice(0, 8);
-        const base = `${p.year}/${p.month}/${p.day}/${p.hour}${p.minute}${p.second}-${amount}-${id}`;
+        const base = `${targetYear}/${targetMonth}/${targetDay}/${targetHour}${targetMinute}${targetSecond}-${amount}-${id}`;
         const imageKey = `images/${base}.jpg`;
         const recordKey = `records/${base}.json`;
 

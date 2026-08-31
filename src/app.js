@@ -1,75 +1,257 @@
 const $=id=>document.getElementById(id);
-const ids=["camera","cameraEmpty","startCamera","toggleCamMode","capture","fileInput","result","preview","amount","save","manual","manualDialog","manualAmount","manualTime","timeFieldGroup","displayTime","applyManual","rescan","canvas","success","shareText","share","copy","again","toast","scanTab","historyTab","scanPage","historyPage","historyDate","historyLoading","historyEmpty","historyList","recapBox","historyTotal","shareRecap","copyRecap","deleteDialog","deleteConfirmInfo","deletePinInput","deletePasswordInput","confirmDeleteBtn"];
+const ids=[
+  "camera","cameraEmpty","startCamera","toggleCamMode","capture","nativeCamInput","fileInput",
+  "result","preview","amount","save","manual","manualDialog","manualAmount","manualDate","manualTime",
+  "dateTimeFieldGroup","displayDate","displayTime","applyManual","rescan","canvas","success","shareText","share","copy",
+  "again","toast","scanTab","historyTab","scanPage","historyPage","historyDate","historyLoading",
+  "historyEmpty","historyList","recapBox","historyTotal","shareRecap","copyRecap",
+  "deleteDialog","deleteConfirmInfo","deletePinInput","deletePasswordInput","confirmDeleteBtn",
+  "externalShortcut","settingsBtn","settingsDialog","settingDefaultCam","settingShortcutEnabled",
+  "settingShortcutLabel","settingShortcutUrl","shortcutFields","saveSettingsBtn"
+];
 const e=Object.fromEntries(ids.map(id=>[id,$(id)]));
-let stream,imageBlob,amount=0,recapText="",originalTime="",pendingDeleteRecord=null;
+let stream,imageBlob,amount=0,recapText="",originalTime="",originalDate="",pendingDeleteRecord=null;
 let inputSource="camera";
-let currentFacingMode=localStorage.getItem("preferredFacingMode")||"user";
+let currentFacingMode=localStorage.getItem("preferredFacingMode")||"environment";
+let allVideoDevices=[];
+let currentDeviceIndex=0;
+let currentRole="kasir";
 
 const rupiah=n=>new Intl.NumberFormat("id-ID").format(n);
-const toast=t=>{e.toast.textContent=t;e.toast.classList.add("show");setTimeout(()=>e.toast.classList.remove("show"),2200)};
+const toast=t=>{e.toast.textContent=t;e.toast.classList.add("show");setTimeout(()=>e.toast.classList.remove("show"),2800)};
 const localDate=()=>{const p=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Jakarta",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(),v=Object.fromEntries(p.map(x=>[x.type,x.value]));return `${v.year}-${v.month}-${v.day}`};
 const currentJakartaTime=()=>{const p=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(),v=Object.fromEntries(p.map(x=>[x.type,x.value]));return `${v.hour}:${v.minute}`};
 
 // Cek apakah context aman (HTTPS atau localhost)
 const isSecureContext=()=>location.protocol==="https:"||location.hostname==="localhost"||location.hostname==="127.0.0.1"||location.hostname.endsWith(".local");
 
+function loadSettings(){
+  const facing=localStorage.getItem("preferredFacingMode")||"environment";
+  const shortcutEnabled=localStorage.getItem("shortcutEnabled")!=="false";
+  const shortcutLabel=localStorage.getItem("shortcutLabel")||"Web Utama";
+  const shortcutUrl=localStorage.getItem("shortcutUrl")||"https://tahunyakrispiya.my.id";
+  return {facing,shortcutEnabled,shortcutLabel,shortcutUrl};
+}
+
+function applySettingsUI(s){
+  currentFacingMode=s.facing;
+  updateCamToggleBtnText();
+
+  // Jika mode intip (guest), sembunyikan pengaturan dan web utama secara mutlak
+  if(currentRole==="guest"){
+    if(e.settingsBtn) e.settingsBtn.style.display="none";
+    if(e.externalShortcut) e.externalShortcut.style.display="none";
+    return;
+  }
+
+  if(e.settingsBtn){
+    e.settingsBtn.style.display="inline-flex";
+  }
+
+  if(e.externalShortcut){
+    if(s.shortcutEnabled){
+      e.externalShortcut.style.display="inline-flex";
+      e.externalShortcut.innerHTML=`<span>${s.shortcutLabel}</span>`;
+      e.externalShortcut.href=s.shortcutUrl;
+    }else{
+      e.externalShortcut.style.display="none";
+    }
+  }
+}
+
+function openSettingsModal(){
+  if(currentRole==="guest") return; // Mode intip tidak boleh akses pengaturan
+  const s=loadSettings();
+  if(e.settingDefaultCam)e.settingDefaultCam.value=s.facing;
+  if(e.settingShortcutEnabled){
+    e.settingShortcutEnabled.checked=s.shortcutEnabled;
+    if(e.shortcutFields)e.shortcutFields.style.display=s.shortcutEnabled?"flex":"none";
+  }
+  if(e.settingShortcutLabel)e.settingShortcutLabel.value=s.shortcutLabel;
+  if(e.settingShortcutUrl)e.settingShortcutUrl.value=s.shortcutUrl;
+  if(e.settingsDialog)e.settingsDialog.showModal();
+}
+
+function saveSettings(ev){
+  ev.preventDefault();
+  const facing=e.settingDefaultCam?.value||"environment";
+  const shortcutEnabled=e.settingShortcutEnabled?e.settingShortcutEnabled.checked:true;
+  const shortcutLabel=(e.settingShortcutLabel?.value||"Web Utama").trim()||"Web Utama";
+  let shortcutUrl=(e.settingShortcutUrl?.value||"").trim();
+  if(!shortcutUrl)shortcutUrl="https://tahunyakrispiya.my.id";
+  else if(!/^https?:\/\//i.test(shortcutUrl))shortcutUrl="https://"+shortcutUrl;
+
+  const prevFacing=currentFacingMode;
+  localStorage.setItem("preferredFacingMode",facing);
+  localStorage.setItem("shortcutEnabled",String(shortcutEnabled));
+  localStorage.setItem("shortcutLabel",shortcutLabel);
+  localStorage.setItem("shortcutUrl",shortcutUrl);
+
+  applySettingsUI({facing,shortcutEnabled,shortcutLabel,shortcutUrl});
+  if(e.settingsDialog)e.settingsDialog.close();
+  toast("Pengaturan disimpan");
+
+  if(prevFacing!==facing){
+    startCamera();
+  }
+}
+
 function updateCamToggleBtnText(){
   if(!e.toggleCamMode)return;
   const isUser=currentFacingMode==="user";
-  e.toggleCamMode.textContent=isUser?"📷 Depan":"📷 Belakang";
+  const iconSvg=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M20 10c0-4.4-3.6-8-8-8s-8 3.6-8 8c0 2 .7 3.8 2 5.3L4 18h5v-5l-1.8 1.8A6 6 0 1 1 18 10"/><path d="m14 14 2 2 4-4"/></svg>`;
+  e.toggleCamMode.innerHTML=`${iconSvg} <span>${isUser?"Kamera Depan":"Kamera Belakang"}</span>`;
 }
 
-function toggleCamera(){
-  currentFacingMode=currentFacingMode==="environment"?"user":"environment";
+async function toggleCamera(){
+  if(allVideoDevices.length>1){
+    currentDeviceIndex=(currentDeviceIndex+1)%allVideoDevices.length;
+    const dev=allVideoDevices[currentDeviceIndex];
+    const label=(dev.label||"").toLowerCase();
+    const isFront=label.includes("front")||label.includes("user")||label.includes("depan")||label.includes("selfie")||label.includes("1");
+    currentFacingMode=isFront?"user":"environment";
+  }else{
+    currentFacingMode=currentFacingMode==="environment"?"user":"environment";
+  }
   localStorage.setItem("preferredFacingMode",currentFacingMode);
   updateCamToggleBtnText();
-  startCamera();
+  await startCamera();
+}
+
+async function refreshVideoDevices(){
+  if("mediaDevices" in navigator && typeof navigator.mediaDevices.enumerateDevices === "function"){
+    try{
+      const devices=await navigator.mediaDevices.enumerateDevices();
+      allVideoDevices=devices.filter(d=>d.kind==="videoinput");
+    }catch(_){}
+  }
+}
+
+async function getCameraStream(targetMode){
+  if(stream){
+    stream.getTracks().forEach(t=>{
+      try{ t.stop(); }catch(_){}
+    });
+    stream=null;
+  }
+  if(e.camera.srcObject){
+    e.camera.srcObject=null;
+  }
+  await new Promise(r=>setTimeout(r,150));
+
+  await refreshVideoDevices();
+
+  const constraintsList=[];
+
+  if(allVideoDevices.length>0){
+    if(targetMode==="environment"){
+      const backDevs=allVideoDevices.filter(d=>{
+        const l=(d.label||"").toLowerCase();
+        if(l.includes("back")||l.includes("rear")||l.includes("environment")||l.includes("belakang")||l.includes("camera2 0")||l.includes("0, facing back")||l.includes("main")) return true;
+        if(!l.includes("front")&&!l.includes("user")&&!l.includes("depan")&&!l.includes("selfie")&&!l.includes("1")) return true;
+        return false;
+      });
+      for(const b of backDevs){
+        if(b.deviceId) constraintsList.push({video:{deviceId:{exact:b.deviceId}},audio:false});
+      }
+    }else{
+      const frontDevs=allVideoDevices.filter(d=>{
+        const l=(d.label||"").toLowerCase();
+        return l.includes("front")||l.includes("user")||l.includes("depan")||l.includes("selfie")||l.includes("1, facing front");
+      });
+      for(const f of frontDevs){
+        if(f.deviceId) constraintsList.push({video:{deviceId:{exact:f.deviceId}},audio:false});
+      }
+    }
+  }
+
+  if(targetMode==="environment"){
+    constraintsList.push({video:{facingMode:{exact:"environment"}},audio:false});
+    constraintsList.push({video:{facingMode:"environment"},audio:false});
+    constraintsList.push({video:{facingMode:{ideal:"environment"}},audio:false});
+  }else{
+    constraintsList.push({video:{facingMode:{exact:"user"}},audio:false});
+    constraintsList.push({video:{facingMode:"user"},audio:false});
+    constraintsList.push({video:{facingMode:{ideal:"user"}},audio:false});
+  }
+
+  let lastError=null;
+  for(const c of constraintsList){
+    try{
+      const s=await navigator.mediaDevices.getUserMedia(c);
+      await refreshVideoDevices();
+      return s;
+    }catch(err){
+      lastError=err;
+    }
+  }
+
+  try{
+    const tempStream=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
+    tempStream.getTracks().forEach(t=>t.stop());
+    await refreshVideoDevices();
+    
+    const backDev=allVideoDevices.find(d=>{
+      const l=(d.label||"").toLowerCase();
+      return l.includes("back")||l.includes("rear")||l.includes("environment")||l.includes("belakang")||l.includes("camera2 0")||l.includes("0, facing back");
+    });
+    if(backDev&&backDev.deviceId){
+      return await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:backDev.deviceId}},audio:false});
+    }
+  }catch(err2){
+    lastError=err2;
+  }
+
+  throw lastError||new Error("Kamera belakang tidak dapat diakses.");
 }
 
 async function startCamera(){
-  if(!isSecureContext()){toast("Kamera butuh HTTPS. Buka via https:// atau localhost.");return}
-  if(!("mediaDevices" in navigator)){toast("Browser tidak mendukung kamera.");return}
-
-  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+  if(!isSecureContext()){
+    toast("Kamera butuh HTTPS. Buka via https:// atau localhost.");
+    return;
+  }
+  if(!("mediaDevices" in navigator)||!navigator.mediaDevices.getUserMedia){
+    toast("Browser tidak mendukung live video. Gunakan tombol 'Buka Kamera Foto HP'.");
+    return;
+  }
 
   updateCamToggleBtnText();
 
-  const targetMode=currentFacingMode;
-  const fallbackMode=targetMode==="environment"?"user":"environment";
+  try{
+    if(e.startCamera) e.startCamera.textContent="Membuka kamera…";
+    stream=await getCameraStream(currentFacingMode);
 
-  const constraints=[
-    {video:{facingMode:{exact:targetMode},width:{ideal:1280},height:{ideal:720}},audio:false},
-    {video:{facingMode:{ideal:targetMode},width:{ideal:1280},height:{ideal:720}},audio:false},
-    {video:{facingMode:{exact:fallbackMode},width:{ideal:1280},height:{ideal:720}},audio:false},
-    {video:{facingMode:{ideal:fallbackMode},width:{ideal:1280},height:{ideal:720}},audio:false},
-    {video:true,audio:false}
-  ];
+    e.camera.setAttribute("playsinline","true");
+    e.camera.setAttribute("webkit-playsinline","true");
+    e.camera.muted=true;
+    e.camera.srcObject=stream;
 
-  let lastError;
-  for(const c of constraints){
     try{
-      stream=await navigator.mediaDevices.getUserMedia(c);
-      e.camera.srcObject=null;
-      e.camera.srcObject=stream;
+      await e.camera.play();
+    }catch(_){}
 
-      await new Promise((resolve)=>{
-        e.camera.onloadedmetadata=()=>{
-          e.camera.onloadedmetadata=null;
-          resolve();
-        };
-        setTimeout(resolve, 2000);
-      });
+    try{
+      const track=stream.getVideoTracks()[0];
+      if(track&&typeof track.getCapabilities==="function"){
+        const caps=track.getCapabilities();
+        if(caps.focusMode&&Array.isArray(caps.focusMode)&&caps.focusMode.includes("continuous")){
+          await track.applyConstraints({advanced:[{focusMode:"continuous"}]}).catch(()=>{});
+        }
+      }
+    }catch(_){}
 
-      await e.camera.play().catch(()=>{});
-
-      e.cameraEmpty.classList.add("hidden");
-      e.startCamera.classList.add("hidden");
-      e.capture.disabled=false;
-      return;
-    }catch(err){lastError=err}
+    e.cameraEmpty.classList.add("hidden");
+    e.startCamera.classList.add("hidden");
+    if(e.startCamera) e.startCamera.textContent="Aktifkan kamera";
+    e.capture.disabled=false;
+  }catch(err){
+    console.error("Camera start error:",err);
+    const errMsg=err?.name==="NotAllowedError"?"Izin kamera ditolak di browser HP.":
+                 err?.name==="NotReadableError"?"Kamera sedang dipakai aplikasi lain.":
+                 "Live scanner kamera tidak aktif. Gunakan tombol 'Buka Kamera Foto HP'.";
+    toast(errMsg);
+    if(e.startCamera) e.startCamera.textContent="Coba lagi";
   }
-  console.error("Camera error:",lastError);
-  toast("Kamera gagal dibuka. Pilih foto dari galeri.");
 }
 
 const canvasBlob=(c,q=.78)=>new Promise(r=>c.toBlob(r,"image/jpeg",q));
@@ -77,11 +259,11 @@ const canvasBlob=(c,q=.78)=>new Promise(r=>c.toBlob(r,"image/jpeg",q));
 function openManual(mode="default"){
   e.manualAmount.value=amount?rupiah(amount):"";
   if(e.manualTime && e.displayTime)e.manualTime.value=e.displayTime.value||originalTime;
+  if(e.manualDate && e.displayDate)e.manualDate.value=e.displayDate.value||originalDate||localDate();
   
-  // Jika jepret kamera, sembunyikan input jam agar cepat langsung isi nominal
-  // Jika dari galeri atau tombol edit manual, tampilkan input jam
-  if(e.timeFieldGroup){
-    e.timeFieldGroup.style.display=(mode==="camera"&&inputSource==="camera")?"none":"";
+  if(e.dateTimeFieldGroup){
+    const isInstantCam=(mode==="camera"||mode==="native_camera")&&(inputSource==="camera"||inputSource==="native_camera");
+    e.dateTimeFieldGroup.style.display=isInstantCam?"none":"";
   }
 
   e.manualDialog.showModal();
@@ -98,9 +280,14 @@ async function useSource(s, source="camera"){
   amount=0;e.amount.textContent="0";
   
   const nowT=currentJakartaTime();
+  const todayD=localDate();
   originalTime=nowT;
+  originalDate=todayD;
+
   if(e.displayTime)e.displayTime.value=nowT;
   if(e.manualTime)e.manualTime.value=nowT;
+  if(e.displayDate)e.displayDate.value=todayD;
+  if(e.manualDate)e.manualDate.value=todayD;
 
   e.result.classList.remove("hidden");
   e.success.classList.add("hidden");
@@ -115,6 +302,11 @@ async function save(){
     const fd=new FormData();
     fd.append("image",imageBlob,"bukti-qris.jpg");
     fd.append("amount",String(amount));
+
+    const selectedDate=e.displayDate?.value||e.manualDate?.value;
+    if(selectedDate){
+      fd.append("customDate",selectedDate);
+    }
 
     const selectedTime=e.displayTime?.value||e.manualTime?.value;
     if(selectedTime){
@@ -233,6 +425,9 @@ async function loadHistory(init=false){
     if(response.status===401)return location.href="/login";
     if(!response.ok)throw new Error(data.error);
 
+    currentRole=data.role||"kasir";
+    applySettingsUI(loadSettings());
+
     if(data.role==="guest"){
       e.scanTab.style.display="none";
       if(!e.scanPage.classList.contains("hidden")){
@@ -272,7 +467,14 @@ async function shareText(t){if(navigator.share)await navigator.share({text:t});e
 
 // Event listeners
 if(e.toggleCamMode)e.toggleCamMode.onclick=toggleCamera;
-updateCamToggleBtnText();
+if(e.settingsBtn)e.settingsBtn.onclick=openSettingsModal;
+if(e.saveSettingsBtn)e.saveSettingsBtn.onclick=saveSettings;
+if(e.settingShortcutEnabled){
+  e.settingShortcutEnabled.onchange=()=>{
+    if(e.shortcutFields)e.shortcutFields.style.display=e.settingShortcutEnabled.checked?"flex":"none";
+  };
+}
+
 e.startCamera.onclick=startCamera;
 e.capture.onclick=()=>useSource(e.camera,"camera");
 e.rescan.onclick=reset;
@@ -291,13 +493,33 @@ if(e.displayTime){
   };
 }
 
-e.fileInput.onchange=()=>{
-  const f=e.fileInput.files[0];
-  if(!f)return;
-  const img=new Image();
-  img.onload=()=>{useSource(img,"gallery");URL.revokeObjectURL(img.src);};
-  img.src=URL.createObjectURL(f);
-};
+if(e.displayDate){
+  e.displayDate.onchange=()=>{
+    if(e.manualDate)e.manualDate.value=e.displayDate.value;
+  };
+}
+
+if(e.nativeCamInput){
+  e.nativeCamInput.onchange=()=>{
+    const f=e.nativeCamInput.files[0];
+    if(!f)return;
+    const img=new Image();
+    img.onload=()=>{useSource(img,"native_camera");URL.revokeObjectURL(img.src);};
+    img.src=URL.createObjectURL(f);
+    e.nativeCamInput.value="";
+  };
+}
+
+if(e.fileInput){
+  e.fileInput.onchange=()=>{
+    const f=e.fileInput.files[0];
+    if(!f)return;
+    const img=new Image();
+    img.onload=()=>{useSource(img,"gallery");URL.revokeObjectURL(img.src);};
+    img.src=URL.createObjectURL(f);
+    e.fileInput.value="";
+  };
+}
 
 e.manualAmount.oninput=()=>{const d=e.manualAmount.value.replace(/\D/g,"");e.manualAmount.value=d?rupiah(Number(d)):"";};
 
@@ -308,6 +530,7 @@ e.applyManual.onclick=x=>{
   amount=n;
   e.amount.textContent=rupiah(n);
   if(e.manualTime && e.displayTime)e.displayTime.value=e.manualTime.value;
+  if(e.manualDate && e.displayDate)e.displayDate.value=e.manualDate.value;
   e.manualDialog.close();
 };
 
@@ -316,5 +539,7 @@ e.copy.onclick=async()=>{await navigator.clipboard.writeText(e.shareText.textCon
 e.shareRecap.onclick=()=>shareText(recapText);
 e.copyRecap.onclick=async()=>{await navigator.clipboard.writeText(recapText);toast("Rekap disalin");};
 
+// Inisialisasi awal pengaturan & riwayat
+applySettingsUI(loadSettings());
 e.historyDate.value=localDate();
 loadHistory(true);

@@ -29,10 +29,10 @@ Biasanya, kasir sering bingung:
 * *"Waktu toko tutup, kasir dan bos harus ngitung manual satu per satu struk transfer."*
 
 **QRIS Kas** adalah **Buku Catatan Kasir Digital di Awan (Cloud)**:
-1. Kasir tinggal **jepret** layar HP pembeli yang menampilkan struk sukses QRIS.
+1. Kasir tinggal **jepret** layar HP pembeli yang menampilkan struk sukses QRIS (atau pilih dari galeri jika dikirim via WA).
 2. Ketik nominal uangnya (misal: `18.000`).
 3. Tekan **Simpan**.
-4. Foto otomatis tersimpan aman di server awan (tidak bikin HP kasir lemot), dan otomatis tercatat jamnya.
+4. Foto otomatis tersimpan aman di server awan (tidak bikin HP kasir lemot), dan otomatis tercatat tanggal & jamnya.
 5. Saat toko tutup, tinggal klik **Bagikan Rekap ke WhatsApp** — bos langsung menerima total setoran harian lengkap beserta link foto buktinya!
 
 ---
@@ -41,7 +41,7 @@ Biasanya, kasir sering bingung:
 
 | Siapa? | Peran / Akun | Apa yang Bisa Dilakukan? |
 |---|---|---|
-| 🧑‍💼 **Kasir / Karyawan Toko** | **Admin / Kasir** | • Memotret struk QRIS pembeli.<br>• Memasukkan nominal rupiah.<br>• Menyimpan transaksi langsung (tanpa ribet diminta PIN).<br>• Melihat riwayat transaksi hari ini. |
+| 🧑‍💼 **Kasir / Karyawan Toko** | **Admin / Kasir** | • Memotret struk QRIS pembeli.<br>• Memasukkan nominal rupiah & menyesuaikan tanggal/jam.<br>• Menyimpan transaksi langsung (tanpa ribet diminta PIN).<br>• Melihat riwayat transaksi hari ini / kemarin. |
 | 👁️ **Auditor / Rekan Shift** | **Guest (Mode Intip)** | • Hanya bisa melihat riwayat transaksi dan total rekap harian.<br>• Tidak bisa memotret, mengedit, atau menghapus data. |
 | 👑 **Pemilik Toko / Bos** | **Super Admin** | • Menerima rekap penjualan via WhatsApp.<br>• Bisa mengedit transaksi jika ada kasir yang salah ketik nominal (wajib masukkan **PIN 6-Digit**).<br>• Bisa menghapus transaksi salah (wajib masukkan **PIN + Password Toko**). |
 
@@ -51,28 +51,28 @@ Biasanya, kasir sering bingung:
 
 ### 📸 Skenario A: Ada Pembeli di Depan Kasir (Jepret Langsung)
 1. Pembeli menunjukkan bukti sukses QRIS di layar HP mereka.
-2. Kasir membuka web di HP toko, tekan tombol kuning **"Ambil foto bukti"**.
-3. Layar pop-up langsung muncul meminta nominal.
+2. Kasir membuka web di HP toko, tekan tombol **"Ambil foto bukti"**.
+3. Layar pop-up langsung muncul meminta nominal uang.
 4. Kasir ketik `18000`, lalu tekan tombol **Gunakan** (atau tekan Enter di keyboard HP).
 5. Kasir tekan **Simpan**.
-6. **Selesai!** Transaksi tercatat dengan jam saat itu juga. **Tidak perlu masukkan PIN** agar tidak antre lama.
+6. **Selesai!** Transaksi tercatat dengan tanggal & jam detik itu juga.
 
 ---
 
-### 📁 Skenario B: Pembeli Kirim Bukti Transfer Lewat WA (Ambil dari Galeri)
-1. Pembeli transfer dari jauh dan kirim screenshot bukti ke WhatsApp toko.
-2. Kasir klik tombol **"📁 Pilih foto dari galeri"** dan pilih screenshot tersebut.
-3. Karena foto ini diambil beberapa menit/jam yang lalu, pop-up akan menampilkan **Jam Transaksi**.
-4. Kasir ketik nominal dan sesuaikan jamnya (misal jam transfer `14:30`).
+### 📁 Skenario B: Pembeli Kirim Bukti Transfer Kemarin / Lewat WA (Ambil dari Galeri)
+1. Pembeli transfer dari jauh atau kasir baru sempat mencatat transaksi kemarin.
+2. Kasir klik tombol **"Pilih foto dari galeri"** dan pilih foto screenshot tersebut.
+3. Pop-up akan menampilkan pilihan **Tanggal** dan **Jam Transaksi**.
+4. Kasir ketik nominal uang, pilih tanggal (misal kemarin), dan sesuaikan jamnya.
 5. Kasir tekan **Gunakan**, lalu tekan **Simpan**.
-6. **Selesai!** Transaksi tercatat dengan jam transfer yang sesuai, **tetap tanpa perlu PIN**.
+6. **Selesai!** Transaksi otomatis tersimpan rapi di tanggal transaksi yang sebenarnya dan muncul di riwayat tanggal tersebut.
 
 ---
 
 ### 📊 Skenario C: Toko Tutup / Ganti Shift (Kirim Rekap ke Bos)
 1. Buka tab **Riwayat**.
-2. Pilih tanggal hari ini (otomatis terpilih).
-3. Di bagian bawah layar akan muncul kotak hijau/emas berisi **Total QRIS** (contoh: `Rp1.250.000`).
+2. Pilih tanggal yang ingin dicek (otomatis terpilih hari ini, bisa diganti ke tanggal kemarin).
+3. Di bagian bawah layar akan muncul kotak emas berisi **Total QRIS** (contoh: `Rp1.250.000`).
 4. Klik tombol **"Bagikan rekap WhatsApp"**.
 5. WhatsApp otomatis terbuka dengan pesan tersusun rapi yang berisi:
    - Jam tiap transaksi.
@@ -101,15 +101,32 @@ Biasanya, kasir sering bingung:
 
 ---
 
-## 4. Kamus Bahasa Manusia vs Bahasa Programmer
+## 4. 🧹 Cara Mengaktifkan Hapus Otomatis 1 Bulan (Cloudflare R2 Lifecycle)
 
-Agar Anda tidak bingung saat membaca istilah-istilah di dokumen teknis lainnya, berikut padanan artinya:
+Agar lemari penyimpanan foto di Cloudflare R2 tidak penuh dan tidak menumpuk file lama yang sudah tidak terpakai, Anda bisa mengaktifkan **Penghapusan Otomatis Setelah 30 Hari** secara gratis:
+
+1. Buka [Cloudflare Dashboard](https://dash.cloudflare.com/) dan login.
+2. Klik menu **R2 Object Storage** di sebelah kiri.
+3. Klik nama Bucket Anda (misal: `qris-receips`).
+4. Klik tab **Settings** di menu atas.
+5. Gulir ke bawah ke bagian **Object Lifecycle Rules**.
+6. Klik tombol **Add rule**:
+   - **Rule Name**: `Hapus Otomatis 30 Hari`
+   - **Prefix**: Kosongkan saja (agar berlaku ke semua file foto dan rekaman JSON).
+   - **Action**: Pilih **Delete objects after...** dan masukkan angka `30` hari (atau `31` hari).
+7. Klik **Add rule**.
+
+> **Hasilnya:** Semua foto bukti transaksi yang umurnya sudah lewat dari 30 hari akan dihapus otomatis oleh Cloudflare di latar belakang tanpa biaya dan tanpa perlu repot dihapus manual!
+
+---
+
+## 5. Kamus Bahasa Manusia vs Bahasa Programmer
 
 | Istilah Bahasa Programmer | Bahasa Manusiawi Sehari-hari | Fungsinya Apa? |
 |---|---|---|
 | **Cloudflare Workers** | Mesin Program di Awan | Otak server yang memproses aplikasi secara online tanpa perlu komputer server fisik yang nyala terus. |
 | **Cloudflare R2** | Lemari Brankas Foto di Awan | Tempat penyimpanan foto bukti dan catatan transaksi yang sangat aman, cepat, dan hemat biaya. |
+| **R2 Object Lifecycle** | Sapu Pembersih Otomatis | Fitur gratis di R2 untuk membersihkan/menghapus file yang sudah lewat dari 30 hari secara otomatis. |
 | **PWA (Progressive Web App)** | Web yang Serasa Aplikasi HP | Website yang bisa diakses lewat browser dan bisa dijadikan ikon aplikasi di layar utama HP kasir. |
 | **HMAC-SHA256 Session** | Kartu Tanda Pengenal Digital | Kunci digital yang memastikan orang yang login adalah kasir/bos resmi dan tidak bisa dipalsukan. |
-| **Custom Domain** | Alamat Website Toko | Alamat link resmi seperti `scan.tahunyakrispiya.my.id`. |
 | **Multi-Tier Authorization** | Sistem Kunci Pengaman Bertingkat | Simpan = Bebas tanpa PIN (biar cepat).<br>Edit = Kunci PIN.<br>Hapus = Kunci PIN + Password. |
