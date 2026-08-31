@@ -7,7 +7,7 @@ const ids=[
   "historyEmpty","historyList","recapBox","historyTotal","shareRecap","copyRecap",
   "deleteDialog","deleteConfirmInfo","deletePinInput","deletePasswordInput","confirmDeleteBtn",
   "externalShortcut","settingsBtn","settingsDialog","settingDefaultCam","settingShortcutEnabled",
-  "settingShortcutLabel","settingShortcutUrl","shortcutFields","saveSettingsBtn"
+  "settingShortcutLabel","settingShortcutUrl","shortcutFields","settingRetentionDays","cleanNowBtn","saveSettingsBtn"
 ];
 const e=Object.fromEntries(ids.map(id=>[id,$(id)]));
 let stream,imageBlob,amount=0,recapText="",originalTime="",originalDate="",pendingDeleteRecord=null;
@@ -59,7 +59,7 @@ function applySettingsUI(s){
   }
 }
 
-function openSettingsModal(){
+async function openSettingsModal(){
   if(currentRole==="guest") return; // Mode intip tidak boleh akses pengaturan
   const s=loadSettings();
   if(e.settingDefaultCam)e.settingDefaultCam.value=s.facing;
@@ -69,10 +69,21 @@ function openSettingsModal(){
   }
   if(e.settingShortcutLabel)e.settingShortcutLabel.value=s.shortcutLabel;
   if(e.settingShortcutUrl)e.settingShortcutUrl.value=s.shortcutUrl;
+
+  try{
+    const res=await fetch("/api/config/retention");
+    if(res.ok){
+      const data=await res.json();
+      if(e.settingRetentionDays && typeof data.retentionDays!=="undefined"){
+        e.settingRetentionDays.value=String(data.retentionDays);
+      }
+    }
+  }catch(_){}
+
   if(e.settingsDialog)e.settingsDialog.showModal();
 }
 
-function saveSettings(ev){
+async function saveSettings(ev){
   ev.preventDefault();
   const facing=e.settingDefaultCam?.value||"environment";
   const shortcutEnabled=e.settingShortcutEnabled?e.settingShortcutEnabled.checked:true;
@@ -80,6 +91,16 @@ function saveSettings(ev){
   let shortcutUrl=(e.settingShortcutUrl?.value||"").trim();
   if(!shortcutUrl)shortcutUrl="https://tahunyakrispiya.my.id";
   else if(!/^https?:\/\//i.test(shortcutUrl))shortcutUrl="https://"+shortcutUrl;
+
+  const retentionDays=Number(e.settingRetentionDays?.value||30);
+
+  try{
+    await fetch("/api/config/retention",{
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({retentionDays})
+    });
+  }catch(_){}
 
   const prevFacing=currentFacingMode;
   localStorage.setItem("preferredFacingMode",facing);
@@ -89,7 +110,7 @@ function saveSettings(ev){
 
   applySettingsUI({facing,shortcutEnabled,shortcutLabel,shortcutUrl});
   if(e.settingsDialog)e.settingsDialog.close();
-  toast("Pengaturan disimpan");
+  toast("Pengaturan & siklus retensi disimpan");
 
   if(prevFacing!==facing){
     startCamera();
@@ -472,6 +493,25 @@ if(e.saveSettingsBtn)e.saveSettingsBtn.onclick=saveSettings;
 if(e.settingShortcutEnabled){
   e.settingShortcutEnabled.onchange=()=>{
     if(e.shortcutFields)e.shortcutFields.style.display=e.settingShortcutEnabled.checked?"flex":"none";
+  };
+}
+
+if(e.cleanNowBtn){
+  e.cleanNowBtn.onclick=async()=>{
+    if(!confirm("Yakin ingin membersihkan catatan & foto lama di R2 yang sudah melewati batas kadaluarsa?")) return;
+    e.cleanNowBtn.disabled=true;
+    e.cleanNowBtn.innerHTML=`<span>Sedang membersihkan…</span>`;
+    try{
+      const res=await fetch("/api/cleanup",{method:"POST"});
+      const data=await res.json();
+      if(!res.ok) throw new Error(data.error||"Gagal membersihkan data");
+      toast(`Pembersihan sukses: ${data.deletedRecords||0} catatan & ${data.deletedImages||0} foto lama dibersihkan.`);
+    }catch(err){
+      toast(err.message||"Gagal melakukan pembersihan");
+    }finally{
+      e.cleanNowBtn.disabled=false;
+      e.cleanNowBtn.innerHTML=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg><span>Bersihkan Data Kadaluarsa Sekarang</span>`;
+    }
   };
 }
 

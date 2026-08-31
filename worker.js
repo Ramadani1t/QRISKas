@@ -46,6 +46,50 @@ function jakartaParts(date = new Date()) {
   return Object.fromEntries(parts.map(({ type, value }) => [type, value]));
 }
 
+async function performCleanup(env, days) {
+  if (!days || days <= 0) return { deletedRecords: 0, deletedImages: 0, message: "Auto-delete nonaktif." };
+  
+  const cutoffTimestamp = Date.now() - (days * 86400 * 1000);
+  let truncated = true;
+  let cursor = undefined;
+  let deletedRecords = 0;
+  let deletedImages = 0;
+
+  while (truncated) {
+    const list = await env.RECEIPTS.list({ prefix: "records/", cursor, limit: 500 });
+    const keysToDelete = [];
+    const imageKeysToDelete = [];
+
+    for (const obj of list.objects) {
+      const match = obj.key.match(/^records\/(\d{4})\/(\d{2})\/(\d{2})\//);
+      let objTime = obj.uploaded ? obj.uploaded.getTime() : 0;
+      if (match) {
+        const recordDate = new Date(`${match[1]}-${match[2]}-${match[3]}T00:00:00Z`).getTime();
+        if (!isNaN(recordDate)) objTime = recordDate;
+      }
+      if (objTime < cutoffTimestamp) {
+        keysToDelete.push(obj.key);
+        const imgKey = obj.key.replace(/^records\//, "images/").replace(/\.json$/, ".jpg");
+        imageKeysToDelete.push(imgKey);
+      }
+    }
+
+    if (keysToDelete.length > 0) {
+      await env.RECEIPTS.delete(keysToDelete);
+      deletedRecords += keysToDelete.length;
+    }
+    if (imageKeysToDelete.length > 0) {
+      await env.RECEIPTS.delete(imageKeysToDelete);
+      deletedImages += imageKeysToDelete.length;
+    }
+
+    truncated = list.truncated;
+    cursor = list.cursor;
+  }
+
+  return { deletedRecords, deletedImages, days };
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -71,10 +115,17 @@ export default {
     }
     if (url.pathname === "/login-guest" && request.method === "POST") {
       const cookie = await sessionCookie("guest", env.AUTH_SECRET);
-      return new Response(null, { status: 302, headers: { location: "/", "set-cookie": `qris_session=${cookie}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=604800` } });
+      const response = new Response(null, { status: 302 });
+      response.headers.append("location", "/");
+      response.headers.append("set-cookie", `qris_session=${cookie}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=604800`);
+      return response;
     }
-    if (url.pathname === "/logout" && request.method === "POST") return new Response(null, { status: 302, headers: { location: "/login", "set-cookie": "qris_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0" } });
-    
+    if (url.pathname === "/logout" && request.method === "POST") {
+      const response = new Response(null, { status: 302 });
+      response.headers.append("location", "/login");
+      response.headers.append("set-cookie", "qris_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0");
+      return response;
+    }
     const role = await authenticated(request, env);
     if (!role) {
       if (url.pathname.startsWith("/api/")) return json({ error: "Sesi login berakhir." }, 401);
@@ -104,12 +155,10 @@ export default {
         const pinHeader = request.headers.get("x-delete-pin");
         const pwdHeader = request.headers.get("x-delete-password");
         
-        // Verifikasi 1: PIN Hapus (DELETE_PIN)
         if (!env.DELETE_PIN || pinHeader !== env.DELETE_PIN) {
           return json({ error: "[Verifikasi 1 Gagal] PIN Hapus salah." }, 401);
         }
 
-        // Verifikasi 2: Password Admin (AUTH_PASSWORD)
         if (!env.AUTH_PASSWORD || pwdHeader !== env.AUTH_PASSWORD) {
           return json({ error: "[Verifikasi 2 Gagal] Password Admin salah." }, 401);
         }
@@ -213,6 +262,64 @@ export default {
         return json({ error: "Gagal menyimpan bukti. Coba lagi.", detail: error.message }, 500);
       }
     }
+    if (url.pathname === "/api/config/retention" && request.method === "GET") {
+      if (role !== "admin") return json({ error: "Akses ditolak." }, 403);
+      try {
+        const confObj = await env.RECEIPTS.get("config/retention.json");
+        const conf = confObj ? await confObj.json() : { retentionDays: 30 };
+        return json(conf);
+      } catch (err) {
+        return json({ retentionDays: 30 });
+      }
+    }
+    if (url.pathname === "/api/config/retention" && request.method === "POST") {
+      if (role !== "admin") return json({ error: "Akses ditolak." }, 403);
+      try {
+        const body = await request.json();
+        const retentionDays = Number(body.retentionDays);
+        if (isNaN(retentionDays) || retentionDays < 0) return json({ error: "Nilai retensi tidak valid." }, 400);
+        const conf = { retentionDays, updatedAt: new Date().toISOString() };
+        await env.RECEIPTS.put("config/retention.json", JSON.stringify(conf), {
+          httpMetadata: { contentType: "application/json" }
+        });
+        return json({ saved: true, ...conf });
+      } catch (err) {
+        return json({ error: "Gagal menyimpan konfigurasi retensi.", detail: err.message }, 500);
+      }
+    }
+    if (url.pathname === "/api/cleanup" && request.method === "POST") {
+      if (role !== "admin") return json({ error: "Akses ditolak." }, 403);
+      try {
+        let retentionDays = 30;
+        try {
+          const confObj = await env.RECEIPTS.get("config/retention.json");
+          if (confObj) {
+            const conf = await confObj.json();
+            retentionDays = Number(conf.retentionDays);
+          }
+        } catch (_) {}
+
+        const result = await performCleanup(env, retentionDays);
+        return json({ success: true, ...result });
+      } catch (err) {
+        return json({ error: "Gagal membersihkan data lama.", detail: err.message }, 500);
+      }
+    }
     return env.ASSETS.fetch(request);
+  },
+  async scheduled(event, env, ctx) {
+    try {
+      const confObj = await env.RECEIPTS.get("config/retention.json");
+      let retentionDays = 30;
+      if (confObj) {
+        const conf = await confObj.json();
+        retentionDays = Number(conf.retentionDays);
+      }
+      if (retentionDays > 0) {
+        ctx.waitUntil(performCleanup(env, retentionDays));
+      }
+    } catch (err) {
+      console.error("Scheduled auto-cleanup error:", err);
+    }
   }
 };
