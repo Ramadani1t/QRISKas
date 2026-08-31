@@ -41,9 +41,9 @@ Biasanya, kasir sering bingung:
 
 | Siapa? | Peran / Akun | Apa yang Bisa Dilakukan? |
 |---|---|---|
-| 🧑‍💼 **Kasir / Karyawan Toko** | **Admin / Kasir** | • Memotret struk QRIS pembeli.<br>• Memasukkan nominal rupiah & menyesuaikan tanggal/jam.<br>• Menyimpan transaksi langsung (tanpa ribet diminta PIN).<br>• Melihat riwayat transaksi hari ini / kemarin. |
-| 👁️ **Auditor / Rekan Shift** | **Guest (Mode Intip)** | • Hanya bisa melihat riwayat transaksi dan total rekap harian.<br>• Tidak bisa memotret, mengedit, atau menghapus data. |
-| 👑 **Pemilik Toko / Bos** | **Super Admin** | • Menerima rekap penjualan via WhatsApp.<br>• Bisa mengedit transaksi jika ada kasir yang salah ketik nominal (wajib masukkan **PIN 6-Digit**).<br>• Bisa menghapus transaksi salah (wajib masukkan **PIN + Password Toko**). |
+| 🧑‍💼 **Kasir / Karyawan Toko** | **Admin / Kasir** | • Memotret struk QRIS pembeli (Layar Scanner & Mode Native Camera HP).<br>• Memasukkan nominal rupiah & menyesuaikan tanggal/jam.<br>• Menyimpan transaksi langsung (tanpa ribet diminta PIN).<br>• Mengatur siklus hapus otomatis data lama (Cycle Erase) di menu Pengaturan.<br>• Melihat riwayat transaksi hari ini / kemarin. |
+| 👁️ **Auditor / Rekan Shift** | **Guest (Mode Intip)** | • Hanya bisa melihat riwayat transaksi dan total rekap harian.<br>• Tombol scan, shortcut link, dan pengaturan otomatis disembunyikan.<br>• Tidak bisa memotret, mengedit, atau menghapus data. |
+| 👑 **Pemilik Toko / Bos** | **Super Admin** | • Menerima rekap penjualan via WhatsApp.<br>• Bisa mengedit transaksi jika ada kasir yang salah ketik nominal (wajib masukkan **PIN 6-Digit**).<br>• Bisa menghapus transaksi salah (wajib masukkan **PIN + Password Toko**).<br>• Mengatur masa simpan data (7 s/d 90 hari) langsung dari web. |
 
 ---
 
@@ -51,7 +51,7 @@ Biasanya, kasir sering bingung:
 
 ### 📸 Skenario A: Ada Pembeli di Depan Kasir (Jepret Langsung)
 1. Pembeli menunjukkan bukti sukses QRIS di layar HP mereka.
-2. Kasir membuka web di HP toko, tekan tombol **"Ambil foto bukti"**.
+2. Kasir membuka web di HP toko, tekan tombol **"Ambil foto dari layar scanner"** atau **"Buka Kamera Foto HP"**.
 3. Layar pop-up langsung muncul meminta nominal uang.
 4. Kasir ketik `18000`, lalu tekan tombol **Gunakan** (atau tekan Enter di keyboard HP).
 5. Kasir tekan **Simpan**.
@@ -101,22 +101,25 @@ Biasanya, kasir sering bingung:
 
 ---
 
-## 4. 🧹 Cara Mengaktifkan Hapus Otomatis 1 Bulan (Cloudflare R2 Lifecycle)
+## 4. 🧹 Cara Mengatur Hapus Otomatis (Cycle Erase R2) Langsung dari Web
 
-Agar lemari penyimpanan foto di Cloudflare R2 tidak penuh dan tidak menumpuk file lama yang sudah tidak terpakai, Anda bisa mengaktifkan **Penghapusan Otomatis Setelah 30 Hari** secara gratis:
+Agar ruang penyimpanan foto tidak menumpuk file lama yang sudah tidak terpakai, sistem sudah disetel **Hapus Otomatis 30 Hari secara default**.
 
-1. Buka [Cloudflare Dashboard](https://dash.cloudflare.com/) dan login.
-2. Klik menu **R2 Object Storage** di sebelah kiri.
-3. Klik nama Bucket Anda (misal: `qris-receips`).
-4. Klik tab **Settings** di menu atas.
-5. Gulir ke bawah ke bagian **Object Lifecycle Rules**.
-6. Klik tombol **Add rule**:
-   - **Rule Name**: `Hapus Otomatis 30 Hari`
-   - **Prefix**: Kosongkan saja (agar berlaku ke semua file foto dan rekaman JSON).
-   - **Action**: Pilih **Delete objects after...** dan masukkan angka `30` hari (atau `31` hari).
-7. Klik **Add rule**.
+Jika Anda atau pengelola toko ingin mengubah durasi penyimpanannya, **bisa langsung diatur sendiri di web tanpa perlu koding / terminal**:
 
-> **Hasilnya:** Semua foto bukti transaksi yang umurnya sudah lewat dari 30 hari akan dihapus otomatis oleh Cloudflare di latar belakang tanpa biaya dan tanpa perlu repot dihapus manual!
+1. Login ke web aplikasi di HP/komputer.
+2. Klik ikon ⚙️ **Pengaturan** di pojok kanan atas.
+3. Pada bagian **CYCLE ERASE / HAPUS OTOMATIS (R2)**, pilih siklus yang diinginkan:
+   * **Hapus Otomatis > 30 Hari** *(Rekomendasi Default)*
+   * **Hapus Otomatis > 7 Hari**
+   * **Hapus Otomatis > 14 Hari**
+   * **Hapus Otomatis > 60 Hari**
+   * **Hapus Otomatis > 90 Hari**
+   * **Mati (Simpan Selamanya)**
+4. Klik **"Simpan Pengaturan"**.
+5. **Selesai!** Setiap hari pukul 03:00 WIB, server awan akan otomatis membersihkan file-file yang sudah melewati batas hari tersebut.
+
+> **💡 Tips Tambahan:** Jika ingin langsung membersihkan data kadaluarsa saat itu juga tanpa menunggu jam 3 pagi, cukup klik tombol **"Bersihkan Data Kadaluarsa Sekarang"** di dalam menu Pengaturan.
 
 ---
 
@@ -126,7 +129,7 @@ Agar lemari penyimpanan foto di Cloudflare R2 tidak penuh dan tidak menumpuk fil
 |---|---|---|
 | **Cloudflare Workers** | Mesin Program di Awan | Otak server yang memproses aplikasi secara online tanpa perlu komputer server fisik yang nyala terus. |
 | **Cloudflare R2** | Lemari Brankas Foto di Awan | Tempat penyimpanan foto bukti dan catatan transaksi yang sangat aman, cepat, dan hemat biaya. |
-| **R2 Object Lifecycle** | Sapu Pembersih Otomatis | Fitur gratis di R2 untuk membersihkan/menghapus file yang sudah lewat dari 30 hari secara otomatis. |
+| **Cycle Erase / Cron** | Sapu Pembersih Otomatis | Fitur terjadwal setiap jam 03:00 WIB untuk membersihkan file yang sudah melewati batas retensi secara otomatis. |
 | **PWA (Progressive Web App)** | Web yang Serasa Aplikasi HP | Website yang bisa diakses lewat browser dan bisa dijadikan ikon aplikasi di layar utama HP kasir. |
 | **HMAC-SHA256 Session** | Kartu Tanda Pengenal Digital | Kunci digital yang memastikan orang yang login adalah kasir/bos resmi dan tidak bisa dipalsukan. |
 | **Multi-Tier Authorization** | Sistem Kunci Pengaman Bertingkat | Simpan = Bebas tanpa PIN (biar cepat).<br>Edit = Kunci PIN.<br>Hapus = Kunci PIN + Password. |
