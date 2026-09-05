@@ -184,15 +184,22 @@ export default {
         const stored = await env.RECEIPTS.get(recordKey);
         if (!stored) return json({ error: "Transaksi tidak ditemukan." }, 404);
         const record = await stored.json();
-        if (newAmount) record.amount = safeAmount(newAmount);
+        if (newAmount !== undefined) {
+          const sa = safeAmount(newAmount);
+          if (!sa) return json({ error: "Nominal tidak valid." }, 400);
+          record.amount = sa;
+        }
         if (newTime) {
-          const match = String(newTime).trim().match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
+          const sanitized = String(newTime).trim().replace(".", ":");
+          const match = sanitized.match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
           if (match) {
             const datePart = record.savedAt.split("T")[0];
             const hh = match[1].padStart(2, "0");
             const mm = match[2].padStart(2, "0");
             const ss = (match[3] || "00").padStart(2, "0");
             record.savedAt = `${datePart}T${hh}:${mm}:${ss}+07:00`;
+          } else {
+            return json({ error: "Format jam tidak valid (gunakan HH:mm)." }, 400);
           }
         }
         await env.RECEIPTS.put(recordKey, JSON.stringify(record), { httpMetadata: { contentType: "application/json" } });

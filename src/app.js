@@ -1,16 +1,19 @@
 const $=id=>document.getElementById(id);
 const ids=[
-  "camera","cameraEmpty","startCamera","toggleCamMode","capture","nativeCamInput","fileInput",
+  "camera","cameraEmpty","startCamera","toggleCamMode","capture","nativeCamBtn","nativeCamInput","fileInput",
   "result","preview","amount","save","manual","manualDialog","manualAmount","manualDate","manualTime",
   "dateTimeFieldGroup","displayDate","displayTime","applyManual","rescan","canvas","success","shareText","share","copy",
   "again","toast","scanTab","historyTab","scanPage","historyPage","historyDate","historyLoading",
   "historyEmpty","historyList","recapBox","historyTotal","shareRecap","copyRecap",
+  "groupedTransactions","groupedList","groupedSummaryBadge","groupedCopyBtn",
+  "editDialog","editAmount","editTime","editPinInput","saveEditBtn",
   "deleteDialog","deleteConfirmInfo","deletePinInput","deletePasswordInput","confirmDeleteBtn",
-  "externalShortcut","settingsBtn","settingsDialog","settingDefaultCam","settingShortcutEnabled",
-  "settingShortcutLabel","settingShortcutUrl","shortcutFields","settingRetentionDays","cleanNowBtn","saveSettingsBtn"
+  "externalShortcut","settingsBtn","settingsDialog","settingDefaultCam","settingNativeCamMode","customPackageFields",
+  "settingCustomPackage","settingShortcutEnabled","settingShortcutLabel","settingShortcutUrl","shortcutFields",
+  "settingRetentionDays","cleanNowBtn","saveSettingsBtn"
 ];
 const e=Object.fromEntries(ids.map(id=>[id,$(id)]));
-let stream,imageBlob,amount=0,recapText="",originalTime="",originalDate="",pendingDeleteRecord=null;
+let stream,imageBlob,amount=0,recapText="",originalTime="",originalDate="",pendingDeleteRecord=null,pendingEditRecord=null;
 let inputSource="camera";
 let currentFacingMode=localStorage.getItem("preferredFacingMode")||"environment";
 let allVideoDevices=[];
@@ -27,15 +30,26 @@ const isSecureContext=()=>location.protocol==="https:"||location.hostname==="loc
 
 function loadSettings(){
   const facing=localStorage.getItem("preferredFacingMode")||"environment";
+  const nativeCamMode=localStorage.getItem("nativeCamMode")||"direct";
+  const customPackage=localStorage.getItem("customCameraPackage")||"org.lineageos.aperture";
   const shortcutEnabled=localStorage.getItem("shortcutEnabled")!=="false";
   const shortcutLabel=localStorage.getItem("shortcutLabel")||"Web Utama";
   const shortcutUrl=localStorage.getItem("shortcutUrl")||"https://tahunyakrispiya.my.id";
-  return {facing,shortcutEnabled,shortcutLabel,shortcutUrl};
+  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl};
 }
 
 function applySettingsUI(s){
   currentFacingMode=s.facing;
   updateCamToggleBtnText();
+
+  // Pengaturan mode buka kamera HP (nativeCamInput)
+  if(e.nativeCamInput){
+    if(s.nativeCamMode==="chooser"){
+      e.nativeCamInput.removeAttribute("capture");
+    }else{
+      e.nativeCamInput.setAttribute("capture","environment");
+    }
+  }
 
   // Jika mode intip (guest), sembunyikan pengaturan dan web utama secara mutlak
   if(currentRole==="guest"){
@@ -63,6 +77,9 @@ async function openSettingsModal(){
   if(currentRole==="guest") return; // Mode intip tidak boleh akses pengaturan
   const s=loadSettings();
   if(e.settingDefaultCam)e.settingDefaultCam.value=s.facing;
+  if(e.settingNativeCamMode)e.settingNativeCamMode.value=s.nativeCamMode;
+  if(e.customPackageFields)e.customPackageFields.style.display=s.nativeCamMode==="package"?"block":"none";
+  if(e.settingCustomPackage)e.settingCustomPackage.value=s.customPackage;
   if(e.settingShortcutEnabled){
     e.settingShortcutEnabled.checked=s.shortcutEnabled;
     if(e.shortcutFields)e.shortcutFields.style.display=s.shortcutEnabled?"flex":"none";
@@ -86,6 +103,8 @@ async function openSettingsModal(){
 async function saveSettings(ev){
   ev.preventDefault();
   const facing=e.settingDefaultCam?.value||"environment";
+  const nativeCamMode=e.settingNativeCamMode?.value||"direct";
+  const customPackage=(e.settingCustomPackage?.value||"org.lineageos.aperture").trim()||"org.lineageos.aperture";
   const shortcutEnabled=e.settingShortcutEnabled?e.settingShortcutEnabled.checked:true;
   const shortcutLabel=(e.settingShortcutLabel?.value||"Web Utama").trim()||"Web Utama";
   let shortcutUrl=(e.settingShortcutUrl?.value||"").trim();
@@ -104,11 +123,13 @@ async function saveSettings(ev){
 
   const prevFacing=currentFacingMode;
   localStorage.setItem("preferredFacingMode",facing);
+  localStorage.setItem("nativeCamMode",nativeCamMode);
+  localStorage.setItem("customCameraPackage",customPackage);
   localStorage.setItem("shortcutEnabled",String(shortcutEnabled));
   localStorage.setItem("shortcutLabel",shortcutLabel);
   localStorage.setItem("shortcutUrl",shortcutUrl);
 
-  applySettingsUI({facing,shortcutEnabled,shortcutLabel,shortcutUrl});
+  applySettingsUI({facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl});
   if(e.settingsDialog)e.settingsDialog.close();
   toast("Pengaturan & siklus retensi disimpan");
 
@@ -367,27 +388,59 @@ function showPage(page){
 
 function titleDate(d){return new Intl.DateTimeFormat("id-ID",{timeZone:"UTC",day:"numeric",month:"long",year:"numeric"}).format(new Date(`${d}T00:00:00Z`));}
 
-async function editRecord(record){
-  const currentTime=new Intl.DateTimeFormat("id-ID",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(record.savedAt));
-  const newAmountStr=prompt("Edit Nominal Rupiah:",record.amount);
-  if(newAmountStr===null)return;
-  const newTimeStr=prompt("Edit Jam (format HH:mm):",currentTime);
-  if(newTimeStr===null)return;
-  let pin=sessionStorage.getItem("deletePin")||prompt("Masukkan 6-digit PIN:");
-  if(!pin)return;
+function openEditRecord(record){
+  pendingEditRecord=record;
+  if(e.editAmount)e.editAmount.value=rupiah(record.amount);
+  
+  // Format jam menggunakan en-GB agar separator selalu ':' bukan '.'
+  const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(record.savedAt));
+  if(e.editTime)e.editTime.value=time;
+  
+  if(e.editPinInput)e.editPinInput.value=sessionStorage.getItem("deletePin")||"";
+  if(e.editDialog)e.editDialog.showModal();
+}
+
+async function handleSaveEdit(ev){
+  ev.preventDefault();
+  if(!pendingEditRecord)return;
+  const newAmount=Number(e.editAmount.value.replace(/\D/g,""));
+  if(!newAmount)return toast("Nominal rupiah tidak valid");
+  const newTime=(e.editTime?.value||"").trim();
+  if(!newTime)return toast("Jam transaksi wajib diisi");
+  const pin=(e.editPinInput?.value||"").trim();
+  if(!pin)return toast("PIN 6-digit wajib diisi");
+
+  if(e.saveEditBtn){
+    e.saveEditBtn.disabled=true;
+    e.saveEditBtn.textContent="Menyimpan…";
+  }
+
   try{
     const response=await fetch("/api/receipts",{
       method:"PUT",
       headers:{"content-type":"application/json","x-delete-pin":pin},
-      body:JSON.stringify({recordKey:record.recordKey,newAmount:Number(newAmountStr),newTime:newTimeStr})
+      body:JSON.stringify({recordKey:pendingEditRecord.recordKey,newAmount,newTime})
     });
     const data=await response.json();
-    if(!response.ok){if(response.status===401)sessionStorage.removeItem("deletePin");throw new Error(data.error);}
+    if(!response.ok){
+      if(response.status===401)sessionStorage.removeItem("deletePin");
+      throw new Error(data.error);
+    }
     sessionStorage.setItem("deletePin",pin);
+    if(e.editDialog)e.editDialog.close();
     toast("Transaksi berhasil diperbarui");
+    pendingEditRecord=null;
     await loadHistory();
-  }catch(x){toast(x.message||"Gagal mengedit transaksi");}
+  }catch(x){
+    toast(x.message||"Gagal mengedit transaksi");
+  }finally{
+    if(e.saveEditBtn){
+      e.saveEditBtn.disabled=false;
+      e.saveEditBtn.textContent="Simpan Perubahan";
+    }
+  }
 }
+
 
 function removeRecord(record){
   pendingDeleteRecord=record;
@@ -461,23 +514,81 @@ async function loadHistory(init=false){
       startCamera();
     }
 
-    if(!data.records.length){e.historyEmpty.classList.remove("hidden");return;}
+    if(!data.records.length){
+      e.historyEmpty.classList.remove("hidden");
+      if(e.groupedTransactions)e.groupedTransactions.classList.add("hidden");
+      return;
+    }
+
+    // Hitung total dan kelompokkan transaksi dengan nominal yang sama
+    const groupMap=new Map();
     let total=0;const lines=[],links=[];
     for(const [index,r] of data.records.entries()){
       total+=r.amount;
-      const time=new Intl.DateTimeFormat("id-ID",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(r.savedAt));
+      const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(r.savedAt));
       lines.push(`${index+1}. ${time} - ${rupiah(r.amount)}`);
       links.push(`${index+1}. ${r.imageUrl}`);
+
+      if(!groupMap.has(r.amount)){
+        groupMap.set(r.amount,{amount:r.amount,count:0,total:0,times:[]});
+      }
+      const g=groupMap.get(r.amount);
+      g.count++;
+      g.total+=r.amount;
+      g.times.push(time);
+
       const item=document.createElement("article");
       item.className="history-item";
       item.innerHTML=`<img src="${r.imageUrl}" alt="Bukti QRIS" loading="lazy"><div><time>${time} WIB</time><strong>Rp${rupiah(r.amount)}</strong><a href="${r.imageUrl}" target="_blank" rel="noopener">Lihat foto</a></div>${data.role==="admin"?'<div class="history-item-actions"><button class="edit-record">Edit</button><button class="delete-record">Hapus</button></div>':""}`;
       if(data.role==="admin"){
-        item.querySelector(".edit-record").onclick=()=>editRecord(r);
+        item.querySelector(".edit-record").onclick=()=>openEditRecord(r);
         item.querySelector(".delete-record").onclick=()=>removeRecord(r);
       }
       e.historyList.append(item);
     }
-    recapText=`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}\n\n*Total QRIS: ${rupiah(total)}*\n\nLink bukti:\n${links.join("\n")}`;
+
+    // Filter: "kalo beda mah gak usah ditampilin" -> HANYA yang count > 1
+    const duplicateGroups=Array.from(groupMap.values())
+      .filter(g=>g.count>1)
+      .sort((a,b)=>b.total-a.total);
+
+    let groupedSummaryText="";
+    if(duplicateGroups.length>0){
+      if(e.groupedSummaryBadge)e.groupedSummaryBadge.textContent=`${duplicateGroups.length} nominal berulang`;
+      if(e.groupedList){
+        e.groupedList.innerHTML=duplicateGroups.map(g=>`
+          <div class="grouped-item">
+            <div class="grouped-item-left">
+              <div class="grouped-qty">${g.count}<small>×</small></div>
+              <div class="grouped-info">
+                <strong class="grouped-amount">Rp${rupiah(g.amount)}</strong>
+                <span class="grouped-times">Jam: ${g.times.join(", ")}</span>
+              </div>
+            </div>
+            <div class="grouped-item-right">
+              <span class="grouped-total-label">Subtotal</span>
+              <strong class="grouped-total-amount">Rp${rupiah(g.total)}</strong>
+            </div>
+          </div>
+        `).join("");
+      }
+      if(e.groupedTransactions)e.groupedTransactions.classList.remove("hidden");
+
+      groupedSummaryText=`\n\n*Pengelompokan Nominal Sama:*\n`+duplicateGroups.map(g=>`• ${g.count}x Rp${rupiah(g.amount)} = Rp${rupiah(g.total)} (Jam: ${g.times.join(", ")})`).join("\n");
+    }else{
+      if(e.groupedTransactions)e.groupedTransactions.classList.add("hidden");
+    }
+
+    if(e.groupedCopyBtn){
+      e.groupedCopyBtn.onclick=async()=>{
+        if(!duplicateGroups.length)return;
+        const text=`*Pengelompokan Transaksi Sama (${titleDate(date)})*\n`+duplicateGroups.map(g=>`• ${g.count}x Rp${rupiah(g.amount)} = Rp${rupiah(g.total)} (Jam: ${g.times.join(", ")})`).join("\n");
+        await navigator.clipboard.writeText(text);
+        toast("Pengelompokan nominal disalin");
+      };
+    }
+
+    recapText=`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n*Total QRIS: ${rupiah(total)}*\n\nLink bukti:\n${links.join("\n")}`;
     e.historyTotal.textContent=`Rp${rupiah(total)}`;
     e.recapBox.classList.remove("hidden");
   }catch(x){toast(x.message||"Riwayat gagal dimuat");}
@@ -539,6 +650,46 @@ if(e.displayDate){
   };
 }
 
+if(e.settingNativeCamMode){
+  e.settingNativeCamMode.onchange=()=>{
+    if(e.customPackageFields){
+      e.customPackageFields.style.display=e.settingNativeCamMode.value==="package"?"block":"none";
+    }
+  };
+}
+
+if(e.nativeCamBtn){
+  e.nativeCamBtn.addEventListener("click",(evt)=>{
+    const s=loadSettings();
+    if(s.nativeCamMode==="package"){
+      evt.preventDefault();
+      evt.stopPropagation();
+      const pkg=s.customPackage||"org.lineageos.aperture";
+      toast(`Membuka kamera ${pkg}…`);
+      
+      const intentUrl=`intent:#Intent;action=android.media.action.STILL_IMAGE_CAMERA;package=${pkg};end`;
+      window.location.href=intentUrl;
+
+      const handleReturn=()=>{
+        window.removeEventListener("focus", handleReturn);
+        document.removeEventListener("visibilitychange", handleVis);
+        setTimeout(()=>{
+          if(confirm("Foto bukti sudah dijepret di kamera?\n\nTekan OK untuk memilih foto hasil jepretan dari galeri.")){
+            if(e.fileInput) e.fileInput.click();
+          }
+        }, 500);
+      };
+      const handleVis=()=>{
+        if(document.visibilityState==="visible"){
+          handleReturn();
+        }
+      };
+      window.addEventListener("focus", handleReturn, {once: true});
+      document.addEventListener("visibilitychange", handleVis, {once: true});
+    }
+  });
+}
+
 if(e.nativeCamInput){
   e.nativeCamInput.onchange=()=>{
     const f=e.nativeCamInput.files[0];
@@ -578,6 +729,10 @@ e.share.onclick=()=>shareText(e.shareText.textContent);
 e.copy.onclick=async()=>{await navigator.clipboard.writeText(e.shareText.textContent);toast("Teks disalin");};
 e.shareRecap.onclick=()=>shareText(recapText);
 e.copyRecap.onclick=async()=>{await navigator.clipboard.writeText(recapText);toast("Rekap disalin");};
+if(e.editAmount){
+  e.editAmount.oninput=()=>{const d=e.editAmount.value.replace(/\D/g,"");e.editAmount.value=d?rupiah(Number(d)):"";};
+}
+if(e.saveEditBtn) e.saveEditBtn.onclick=handleSaveEdit;
 
 // Inisialisasi awal pengaturan & riwayat
 applySettingsUI(loadSettings());
