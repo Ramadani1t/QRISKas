@@ -10,7 +10,7 @@ const ids=[
   "deleteDialog","deleteConfirmInfo","deletePinInput","deletePasswordInput","confirmDeleteBtn",
   "externalShortcut","settingsBtn","settingsDialog","settingDefaultCam","settingNativeCamMode","customPackageFields",
   "settingCustomPackage","settingShortcutEnabled","settingShortcutLabel","settingShortcutUrl","shortcutFields",
-  "settingRetentionDays","cleanNowBtn","saveSettingsBtn"
+  "settingGroupedEnabled","settingRetentionDays","cleanNowBtn","saveSettingsBtn"
 ];
 const e=Object.fromEntries(ids.map(id=>[id,$(id)]));
 let stream,imageBlob,amount=0,recapText="",originalTime="",originalDate="",pendingDeleteRecord=null,pendingEditRecord=null;
@@ -35,7 +35,8 @@ function loadSettings(){
   const shortcutEnabled=localStorage.getItem("shortcutEnabled")!=="false";
   const shortcutLabel=localStorage.getItem("shortcutLabel")||"Web Utama";
   const shortcutUrl=localStorage.getItem("shortcutUrl")||"https://tahunyakrispiya.my.id";
-  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl};
+  const groupedEnabled=localStorage.getItem("groupedEnabled")!=="false";
+  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled};
 }
 
 function applySettingsUI(s){
@@ -86,6 +87,7 @@ async function openSettingsModal(){
   }
   if(e.settingShortcutLabel)e.settingShortcutLabel.value=s.shortcutLabel;
   if(e.settingShortcutUrl)e.settingShortcutUrl.value=s.shortcutUrl;
+  if(e.settingGroupedEnabled)e.settingGroupedEnabled.checked=s.groupedEnabled;
 
   try{
     const res=await fetch("/api/config/retention");
@@ -111,6 +113,7 @@ async function saveSettings(ev){
   if(!shortcutUrl)shortcutUrl="https://tahunyakrispiya.my.id";
   else if(!/^https?:\/\//i.test(shortcutUrl))shortcutUrl="https://"+shortcutUrl;
 
+  const groupedEnabled=e.settingGroupedEnabled?e.settingGroupedEnabled.checked:true;
   const retentionDays=Number(e.settingRetentionDays?.value||30);
 
   try{
@@ -128,10 +131,15 @@ async function saveSettings(ev){
   localStorage.setItem("shortcutEnabled",String(shortcutEnabled));
   localStorage.setItem("shortcutLabel",shortcutLabel);
   localStorage.setItem("shortcutUrl",shortcutUrl);
+  localStorage.setItem("groupedEnabled",String(groupedEnabled));
 
-  applySettingsUI({facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl});
+  applySettingsUI({facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled});
   if(e.settingsDialog)e.settingsDialog.close();
-  toast("Pengaturan & siklus retensi disimpan");
+  toast("Pengaturan disimpan");
+
+  if(!e.historyPage.classList.contains("hidden")){
+    loadHistory();
+  }
 
   if(prevFacing!==facing){
     startCamera();
@@ -552,8 +560,9 @@ async function loadHistory(init=false){
       .filter(g=>g.count>1)
       .sort((a,b)=>b.total-a.total);
 
+    const s=loadSettings();
     let groupedSummaryText="";
-    if(duplicateGroups.length>0){
+    if(s.groupedEnabled && duplicateGroups.length>0){
       if(e.groupedSummaryBadge)e.groupedSummaryBadge.textContent=`${duplicateGroups.length} nominal berulang`;
       if(e.groupedList){
         e.groupedList.innerHTML=duplicateGroups.map(g=>`
