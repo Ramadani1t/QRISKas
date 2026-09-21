@@ -1,4 +1,4 @@
-const CACHE_NAME = 'qriskas-v2';
+const CACHE_NAME = 'qriskas-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/style.css',

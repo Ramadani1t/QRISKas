@@ -126,6 +126,9 @@ export default {
       response.headers.append("set-cookie", "qris_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0");
       return response;
     }
+    if (url.pathname === "/sw.js" || url.pathname === "/manifest.webmanifest" || url.pathname.endsWith(".webmanifest")) {
+      return env.ASSETS.fetch(request);
+    }
     const role = await authenticated(request, env);
     if (!role) {
       if (url.pathname.startsWith("/api/")) return json({ error: "Sesi login berakhir." }, 401);
@@ -179,7 +182,7 @@ export default {
       if (role !== "admin") return json({ error: "Akses ditolak." }, 403);
       try {
         if (!env.DELETE_PIN || request.headers.get("x-delete-pin") !== env.DELETE_PIN) return json({ error: "PIN salah." }, 401);
-        const { recordKey, newAmount, newDate, newTime, newNote, newIsSurplus } = await request.json();
+        const { recordKey, newAmount, newDate, newTime, newNote, newIsSurplus, newIsCashout, newIsRevised } = await request.json();
         if (typeof recordKey !== "string") return json({ error: "Record key tidak valid." }, 400);
         const stored = await env.RECEIPTS.get(recordKey);
         if (!stored) return json({ error: "Transaksi tidak ditemukan." }, 404);
