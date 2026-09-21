@@ -1,7 +1,9 @@
 package id.qriskas.mobile
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -26,6 +28,8 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import id.qriskas.mobile.databinding.ActivityMainBinding
 import java.io.ByteArrayOutputStream
@@ -52,8 +56,11 @@ class MainActivity : AppCompatActivity() {
     private var cameraPhotoUri: Uri? = null
     private var cameraPhotoFile: File? = null
 
+    private var pendingCameraLaunch = false
+
     companion object {
         private const val TAG = "QRISKASMobile"
+        private const val PERMISSION_REQ_CAMERA = 1001
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -73,7 +80,19 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         setupBackPressHandler()
         registerNetworkMonitoring()
-        requestAllPermissionsIfNeeded()
+        requestHardwareCameraPermissionAtStartup()
+    }
+
+    private fun requestHardwareCameraPermissionAtStartup() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CAMERA),
+                PERMISSION_REQ_CAMERA
+            )
+        }
     }
 
     private fun setupLaunchers() {
@@ -162,7 +181,7 @@ class MainActivity : AppCompatActivity() {
         // Akselerasi Grafis Hardware 60 FPS
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
-        // Inject JS bridge
+        // Inject JS bridge dengan kedua nama (kompatibel DStock & QRISKas)
         webView.addJavascriptInterface(WebAppInterface(this), "QriskasAndroid")
         webView.addJavascriptInterface(WebAppInterface(this), "AndroidBridge")
 
@@ -199,7 +218,6 @@ class MainActivity : AppCompatActivity() {
                 if (request.isForMainFrame) {
                     if (!isNetworkAvailable()) {
                         try {
-                            // Coba muat halaman dari cache lokal agar tidak blank putih
                             view.settings.cacheMode = WebSettings.LOAD_CACHE_ONLY
                             view.loadUrl(APP_URL)
                         } catch (_: Exception) {
@@ -215,15 +233,10 @@ class MainActivity : AppCompatActivity() {
         // WebChromeClient: handle kamera permission & file chooser
         webView.webChromeClient = object : WebChromeClient() {
 
-            // Otomatis grant izin kamera ke WebRTC / live camera viewfinder
+            // Otomatis grant izin kamera ke WebRTC / live camera viewfinder persis DStock
             override fun onPermissionRequest(request: PermissionRequest) {
                 runOnUiThread {
-                    if (CameraPermissionHelper.hasCameraPermission(this@MainActivity)) {
-                        request.grant(request.resources)
-                    } else {
-                        CameraPermissionHelper.requestCameraPermission(this@MainActivity)
-                        request.grant(request.resources)
-                    }
+                    request.grant(request.resources)
                 }
             }
 
@@ -284,7 +297,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Buat Camera Intent yang mengunci KAMERA BELAKANG secara hardware-level via Bundle extras.
+     * Buat Camera Intent yang mengunci KAMERA BELAKANG secara hardware-level via Bundle extras & ClipData.
      */
     fun createCameraIntent(): Intent? {
         return try {
@@ -299,6 +312,7 @@ class MainActivity : AppCompatActivity() {
 
             Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
                 putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
+                clipData = ClipData.newUri(contentResolver, "photo", photoUri)
                 // Kunci kamera belakang secara hardware-level
                 putExtra("android.intent.extra.USE_FRONT_CAMERA", false)
                 putExtra("android.intent.extra.CAMERA_FACING", 0) // 0 = Back, 1 = Front
@@ -319,6 +333,9 @@ class MainActivity : AppCompatActivity() {
     private fun createTempImageFile(): File {
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: cacheDir
+        if (!storageDir.exists()) {
+            storageDir.mkdirs()
+        }
         return File.createTempFile("QRISKAS_${timeStamp}_", ".jpg", storageDir)
     }
 
@@ -373,6 +390,7 @@ class MainActivity : AppCompatActivity() {
             rotatedBitmap.recycle()
             val byteArray = outputStream.toByteArray()
             val base64 = Base64.encodeToString(byteArray, Base64.NO_WRAP)
+            try { photoFile.delete() } catch (_: Exception) {}
             "data:image/jpeg;base64,$base64"
         } catch (e: Exception) {
             Log.e(TAG, "Error converting photo to data url", e)
@@ -384,8 +402,15 @@ class MainActivity : AppCompatActivity() {
      * Dipanggil dari WebAppInterface (JS Bridge) untuk launch kamera native belakang langsung.
      */
     fun launchNativeCamera() {
-        if (!CameraPermissionHelper.hasCameraPermission(this)) {
-            CameraPermissionHelper.requestCameraPermission(this)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingCameraLaunch = true
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CAMERA),
+                PERMISSION_REQ_CAMERA
+            )
             return
         }
         val intent = createCameraIntent()
@@ -449,9 +474,8 @@ class MainActivity : AppCompatActivity() {
             (function() {
                 window.__isAndroidApp = true;
                 
-                if (window.QriskasAndroid) {
-                    console.log('[QRISKAS Mobile] Android bridge active, SDK: ' + 
-                        window.QriskasAndroid.getAndroidVersion());
+                if (window.QriskasAndroid || window.AndroidBridge) {
+                    console.log('[QRISKAS Mobile] Android hardware camera bridge active');
                 }
                 
                 var nativeCamInput = document.getElementById('nativeCamInput');
@@ -525,29 +549,32 @@ class MainActivity : AppCompatActivity() {
         """.trimIndent()
     }
 
-    private fun requestAllPermissionsIfNeeded() {
-        val needsCamera = !CameraPermissionHelper.hasCameraPermission(this)
-        val needsStorage = !CameraPermissionHelper.hasStoragePermission(this)
-        if (needsCamera || needsStorage) {
-            CameraPermissionHelper.requestAllPermissions(this)
-        }
-    }
-
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        when (requestCode) {
-            CameraPermissionHelper.REQUEST_CODE_ALL,
-            CameraPermissionHelper.REQUEST_CODE_CAMERA -> {
-                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode == PERMISSION_REQ_CAMERA) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                webView.evaluateJavascript(
+                    "console.log('[QRISKAS] Camera permission granted');",
+                    null
+                )
+                if (pendingCameraLaunch) {
+                    pendingCameraLaunch = false
+                    val intent = createCameraIntent()
+                    if (intent != null) {
+                        hardwareCameraLauncher.launch(intent)
+                    }
+                } else {
                     webView.evaluateJavascript(
-                        "console.log('[QRISKAS] Camera permission granted');",
+                        "(function(){ if(window.startCamera){ window.startCamera(); } else { location.reload(); } })()",
                         null
                     )
                 }
+            } else {
+                Toast.makeText(this, "Izin kamera diperlukan untuk scan QRIS", Toast.LENGTH_LONG).show()
             }
         }
     }

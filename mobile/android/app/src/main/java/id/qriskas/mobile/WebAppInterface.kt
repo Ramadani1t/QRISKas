@@ -125,6 +125,22 @@ class WebAppInterface(private val activity: MainActivity) {
     }
 
     /**
+     * Alias toast untuk kompatibilitas dengan DStock pos.html
+     */
+    @JavascriptInterface
+    fun toast(message: String) {
+        showToast(message)
+    }
+
+    /**
+     * Overload vibrate dengan Int
+     */
+    @JavascriptInterface
+    fun vibrate(durationMs: Int) {
+        vibrate(durationMs.toLong())
+    }
+
+    /**
      * Info bahwa ini adalah Android WebView (bukan browser biasa).
      * JS bisa cek: if (window.QriskasAndroid) { ... }
      */

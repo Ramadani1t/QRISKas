@@ -184,10 +184,23 @@ function updateCamToggleBtnText(){
   e.toggleCamMode.innerHTML=`${iconSvg} <span>${isUser?"Kamera Depan":"Kamera Belakang"}</span>`;
 }
 
+async function getAllVideoInputDevices(){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
+  try{
+    const devices=await navigator.mediaDevices.enumerateDevices();
+    allVideoDevices=devices.filter(d=>d.kind==="videoinput");
+    return allVideoDevices;
+  }catch(_){
+    return [];
+  }
+}
+
 async function toggleCamera(){
-  if(allVideoDevices.length>1){
-    currentDeviceIndex=(currentDeviceIndex+1)%allVideoDevices.length;
-    const dev=allVideoDevices[currentDeviceIndex];
+  const devices=await getAllVideoInputDevices();
+  const hasLabels=devices.some(d=>(d.label||"").trim().length>0);
+  if(devices.length>1 && hasLabels){
+    currentDeviceIndex=(currentDeviceIndex+1)%devices.length;
+    const dev=devices[currentDeviceIndex];
     const label=(dev.label||"").toLowerCase();
     const isFront=label.includes("front")||label.includes("user")||label.includes("depan")||label.includes("selfie")||label.includes("1");
     currentFacingMode=isFront?"user":"environment";
@@ -200,14 +213,10 @@ async function toggleCamera(){
 }
 
 async function refreshVideoDevices(){
-  if("mediaDevices" in navigator && typeof navigator.mediaDevices.enumerateDevices === "function"){
-    try{
-      const devices=await navigator.mediaDevices.enumerateDevices();
-      allVideoDevices=devices.filter(d=>d.kind==="videoinput");
-    }catch(_){}
-  }
+  return await getAllVideoInputDevices();
 }
 
+// Algoritma Multi-Tier Hardware Camera Stream (Sesuai Standar DStock POS)
 async function getCameraStream(targetMode){
   if(stream){
     stream.getTracks().forEach(t=>{
@@ -215,28 +224,29 @@ async function getCameraStream(targetMode){
     });
     stream=null;
   }
-  if(e.camera.srcObject){
+  if(e.camera && e.camera.srcObject){
     e.camera.srcObject=null;
   }
-  await new Promise(r=>setTimeout(r,150));
+  await new Promise(r=>setTimeout(r,100));
 
-  await refreshVideoDevices();
-
+  let devices=await getAllVideoInputDevices();
   const constraintsList=[];
 
-  if(allVideoDevices.length>0){
+  // HANYA filter by label jika label sudah terungkap (setelah izin kamera aktif)
+  const hasLabels=devices.some(d=>(d.label||"").trim().length>0);
+  if(devices.length>0 && hasLabels){
     if(targetMode==="environment"){
-      const backDevs=allVideoDevices.filter(d=>{
+      const backDevs=devices.filter(d=>{
         const l=(d.label||"").toLowerCase();
-        if(l.includes("back")||l.includes("rear")||l.includes("environment")||l.includes("belakang")||l.includes("camera2 0")||l.includes("0, facing back")||l.includes("main")) return true;
-        if(!l.includes("front")&&!l.includes("user")&&!l.includes("depan")&&!l.includes("selfie")&&!l.includes("1")) return true;
-        return false;
+        return l.includes("back")||l.includes("rear")||l.includes("environment")||
+               l.includes("belakang")||l.includes("camera2 0")||l.includes("0, facing back")||
+               l.includes("main")||(!l.includes("front")&&!l.includes("user")&&!l.includes("depan")&&!l.includes("selfie")&&!l.includes("1"));
       });
       for(const b of backDevs){
         if(b.deviceId) constraintsList.push({video:{deviceId:{exact:b.deviceId}},audio:false});
       }
     }else{
-      const frontDevs=allVideoDevices.filter(d=>{
+      const frontDevs=devices.filter(d=>{
         const l=(d.label||"").toLowerCase();
         return l.includes("front")||l.includes("user")||l.includes("depan")||l.includes("selfie")||l.includes("1, facing front");
       });
@@ -246,9 +256,10 @@ async function getCameraStream(targetMode){
     }
   }
 
+  // Fallback constraints bertingkat persis DStock
   if(targetMode==="environment"){
-    constraintsList.push({video:{facingMode:{exact:"environment"}},audio:false});
-    constraintsList.push({video:{facingMode:"environment"},audio:false});
+    constraintsList.push({video:{facingMode:{exact:"environment"},width:{ideal:1280},height:{ideal:720}},audio:false});
+    constraintsList.push({video:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}},audio:false});
     constraintsList.push({video:{facingMode:{ideal:"environment"}},audio:false});
   }else{
     constraintsList.push({video:{facingMode:{exact:"user"}},audio:false});
@@ -260,19 +271,19 @@ async function getCameraStream(targetMode){
   for(const c of constraintsList){
     try{
       const s=await navigator.mediaDevices.getUserMedia(c);
-      await refreshVideoDevices();
+      await getAllVideoInputDevices();
       return s;
     }catch(err){
       lastError=err;
     }
   }
 
+  // Fallback tahap 3 persis DStock: streaming sementara untuk memicu dialog izin, lalu enumerasi deviceId kamera belakang
   try{
     const tempStream=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
     tempStream.getTracks().forEach(t=>t.stop());
-    await refreshVideoDevices();
-    
-    const backDev=allVideoDevices.find(d=>{
+    devices=await getAllVideoInputDevices();
+    const backDev=devices.find(d=>{
       const l=(d.label||"").toLowerCase();
       return l.includes("back")||l.includes("rear")||l.includes("environment")||l.includes("belakang")||l.includes("camera2 0")||l.includes("0, facing back");
     });
@@ -286,13 +297,29 @@ async function getCameraStream(targetMode){
   throw lastError||new Error("Kamera belakang tidak dapat diakses.");
 }
 
+function triggerNativeCamera(){
+  if(window.AndroidBridge && typeof window.AndroidBridge.openHardwareCamera==="function"){
+    window.AndroidBridge.openHardwareCamera();
+    return true;
+  }
+  if(window.QriskasAndroid && typeof window.QriskasAndroid.openHardwareCamera==="function"){
+    window.QriskasAndroid.openHardwareCamera();
+    return true;
+  }
+  if(e.nativeCamInput){
+    e.nativeCamInput.click();
+    return true;
+  }
+  return false;
+}
+
 async function startCamera(){
   if(!isSecureContext()){
     toast("Kamera butuh HTTPS. Buka via https:// atau localhost.");
     return;
   }
   if(!("mediaDevices" in navigator)||!navigator.mediaDevices.getUserMedia){
-    toast("Browser tidak mendukung live video. Gunakan tombol 'Buka Kamera Foto HP'.");
+    triggerNativeCamera();
     return;
   }
 
@@ -326,12 +353,21 @@ async function startCamera(){
     if(e.startCamera) e.startCamera.textContent="Aktifkan kamera";
     e.capture.disabled=false;
   }catch(err){
-    console.error("Camera start error:",err);
-    const errMsg=err?.name==="NotAllowedError"?"Izin kamera ditolak di browser HP.":
-                 err?.name==="NotReadableError"?"Kamera sedang dipakai aplikasi lain.":
-                 "Live scanner kamera tidak aktif. Gunakan tombol 'Buka Kamera Foto HP'.";
-    toast(errMsg);
+    console.warn("Live in-app camera error, falling back to hardware native camera:", err);
+    e.cameraEmpty.classList.remove("hidden");
+    e.startCamera.classList.remove("hidden");
     if(e.startCamera) e.startCamera.textContent="Coba lagi";
+    
+    // Auto-fallback persis DStock jika berjalan di Android App
+    if(window.QriskasAndroid || window.AndroidBridge || window.__isAndroidApp){
+      toast("Live kamera tidak aktif, beralih ke Kamera HP...");
+      triggerNativeCamera();
+    } else {
+      const errMsg=err?.name==="NotAllowedError"?"Izin kamera ditolak di browser HP.":
+                   err?.name==="NotReadableError"?"Kamera sedang dipakai aplikasi lain.":
+                   "Live scanner kamera tidak aktif. Gunakan tombol 'Buka Kamera Foto HP'.";
+      toast(errMsg);
+    }
   }
 }
 
@@ -388,22 +424,38 @@ async function useSource(s, source="camera"){
 async function save(){
   if(!amount)return openManual(inputSource);
   e.save.disabled=true;e.save.textContent="Menyimpan…";
+
+  const selectedDate=e.displayDate?.value||e.manualDate?.value||localDate();
+  const selectedTime=e.displayTime?.value||e.manualTime?.value||currentJakartaTime();
+
+  if(!navigator.onLine){
+    await queueOfflineReceipt({
+      amount: String(amount),
+      isSurplus: Boolean(isSurplusMode),
+      note: currentNote,
+      customDate: selectedDate,
+      customTime: selectedTime,
+      imageBlob: imageBlob
+    });
+    const line=formatReceiptLine(selectedTime, amount, isSurplusMode, currentNote);
+    e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
+    e.result.classList.add("hidden");
+    e.success.classList.remove("hidden");
+    e.success.scrollIntoView({behavior:"smooth"});
+    toast("✅ Tersimpan di antrean offline! Akan otomatis disinkronkan saat ada internet.");
+    e.save.disabled=false;
+    e.save.textContent="Simpan";
+    return;
+  }
+
   try{
     const fd=new FormData();
     fd.append("image",imageBlob,"bukti-qris.jpg");
     fd.append("amount",String(amount));
     fd.append("isSurplus",String(Boolean(isSurplusMode)));
     if(currentNote) fd.append("note",currentNote);
-
-    const selectedDate=e.displayDate?.value||e.manualDate?.value;
-    if(selectedDate){
-      fd.append("customDate",selectedDate);
-    }
-
-    const selectedTime=e.displayTime?.value||e.manualTime?.value;
-    if(selectedTime){
-      fd.append("customTime",selectedTime);
-    }
+    if(selectedDate) fd.append("customDate",selectedDate);
+    if(selectedTime) fd.append("customTime",selectedTime);
 
     const response=await fetch("/api/receipts",{method:"POST",body:fd});
     const data=await response.json();
@@ -417,7 +469,26 @@ async function save(){
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
-  }catch(x){toast(x.message||"Gagal menyimpan");}
+  }catch(x){
+    if(!navigator.onLine || x.message?.includes("fetch") || x.message?.includes("NetworkError")){
+      await queueOfflineReceipt({
+        amount: String(amount),
+        isSurplus: Boolean(isSurplusMode),
+        note: currentNote,
+        customDate: selectedDate,
+        customTime: selectedTime,
+        imageBlob: imageBlob
+      });
+      const line=formatReceiptLine(selectedTime, amount, isSurplusMode, currentNote);
+      e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
+      e.result.classList.add("hidden");
+      e.success.classList.remove("hidden");
+      e.success.scrollIntoView({behavior:"smooth"});
+      toast("✅ Tersimpan di antrean offline! Akan otomatis disinkronkan saat ada internet.");
+    } else {
+      toast(x.message||"Gagal menyimpan");
+    }
+  }
   finally{e.save.disabled=false;e.save.textContent="Simpan";}
 }
 
@@ -536,6 +607,34 @@ async function saveSurplus(ev){
     e.saveSurplusBtn.textContent="Menyimpan…";
   }
 
+  // Jika sedang offline
+  if(!navigator.onLine){
+    let finalBlob=surplusSelectedBlob;
+    if(!finalBlob){
+      finalBlob=await generateSurplusProofImage(sAmount,sNote,sDate,sTime);
+    }
+    await queueOfflineReceipt({
+      amount: String(sAmount),
+      isSurplus: true,
+      note: sNote,
+      customDate: sDate,
+      customTime: sTime,
+      imageBlob: finalBlob
+    });
+    const line=formatReceiptLine(sTime,sAmount,true,sNote);
+    e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
+    if(e.surplusDialog)e.surplusDialog.close();
+    e.result.classList.add("hidden");
+    e.success.classList.remove("hidden");
+    e.success.scrollIntoView({behavior:"smooth"});
+    toast("✨ Surplus tersimpan di antrean offline! Akan disinkronkan saat ada internet.");
+    if(e.saveSurplusBtn){
+      e.saveSurplusBtn.disabled=false;
+      e.saveSurplusBtn.textContent="Simpan Surplus";
+    }
+    return;
+  }
+
   try{
     let finalBlob=surplusSelectedBlob;
     if(!finalBlob){
@@ -572,7 +671,29 @@ async function saveSurplus(ev){
     e.success.scrollIntoView({behavior:"smooth"});
     toast("Surplus berhasil dicatat!");
   }catch(err){
-    toast(err.message||"Gagal menyimpan surplus");
+    if(!navigator.onLine || err.message?.includes("fetch") || err.message?.includes("NetworkError")){
+      let finalBlob=surplusSelectedBlob;
+      if(!finalBlob){
+        finalBlob=await generateSurplusProofImage(sAmount,sNote,sDate,sTime);
+      }
+      await queueOfflineReceipt({
+        amount: String(sAmount),
+        isSurplus: true,
+        note: sNote,
+        customDate: sDate,
+        customTime: sTime,
+        imageBlob: finalBlob
+      });
+      const line=formatReceiptLine(sTime,sAmount,true,sNote);
+      e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
+      if(e.surplusDialog)e.surplusDialog.close();
+      e.result.classList.add("hidden");
+      e.success.classList.remove("hidden");
+      e.success.scrollIntoView({behavior:"smooth"});
+      toast("✨ Surplus tersimpan di antrean offline! Akan disinkronkan saat ada internet.");
+    } else {
+      toast(err.message||"Gagal menyimpan surplus");
+    }
   }finally{
     if(e.saveSurplusBtn){
       e.saveSurplusBtn.disabled=false;
@@ -956,6 +1077,14 @@ if(e.nativeCamBtn){
       };
       window.addEventListener("focus", handleReturn, {once: true});
       document.addEventListener("visibilitychange", handleVis, {once: true});
+      return;
+    }
+
+    // Direct / Hardware mode di Android App (persis DStock)
+    if(window.QriskasAndroid || window.AndroidBridge || window.__isAndroidApp){
+      evt.preventDefault();
+      evt.stopPropagation();
+      triggerNativeCamera();
     }
   });
 }
@@ -1074,4 +1203,106 @@ if(e.saveEditBtn) e.saveEditBtn.onclick=handleSaveEdit;
 applySettingsUI(loadSettings());
 e.historyDate.value=localDate();
 loadHistory(true);
+
+// === NATIVE ANDROID HARDWARE CAMERA BRIDGE CALLBACK (Persis DStock) ===
+window.onHardwareCameraCapture = function(dataUrl) {
+  if (!dataUrl) return;
+  const img = new Image();
+  img.onload = () => {
+    useSource(img, "native_camera");
+    toast("Foto kamera belakang berhasil dimuat!");
+    if (window.QriskasAndroid && typeof window.QriskasAndroid.vibrate === "function") {
+      window.QriskasAndroid.vibrate(50);
+    } else if (window.AndroidBridge && typeof window.AndroidBridge.vibrate === "function") {
+      window.AndroidBridge.vibrate(50);
+    }
+  };
+  img.src = dataUrl;
+};
+window._qriskasNativeCameraCallback = window.onHardwareCameraCapture;
+
+// === OFFLINE-FIRST STORAGE & AUTO-SYNC ===
+const OFFLINE_DB_NAME = "qriskas_offline_db";
+const OFFLINE_STORE = "pending_receipts";
+
+function openOfflineDb() {
+  return new Promise((resolve) => {
+    if (!window.indexedDB) return resolve(null);
+    const req = indexedDB.open(OFFLINE_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(OFFLINE_STORE, { keyPath: "id", autoIncrement: true });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+}
+
+async function queueOfflineReceipt(item) {
+  try {
+    const db = await openOfflineDb();
+    if (!db) {
+      const list = JSON.parse(localStorage.getItem("qriskas_offline_queue") || "[]");
+      list.push(item);
+      localStorage.setItem("qriskas_offline_queue", JSON.stringify(list));
+      return true;
+    }
+    return new Promise(resolve => {
+      const tx = db.transaction(OFFLINE_STORE, "readwrite");
+      tx.objectStore(OFFLINE_STORE).add(item);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (_) {
+    return false;
+  }
+}
+
+async function syncOfflineQueue() {
+  if (!navigator.onLine) return;
+  try {
+    const db = await openOfflineDb();
+    if (!db) return;
+    const tx = db.transaction(OFFLINE_STORE, "readonly");
+    const req = tx.objectStore(OFFLINE_STORE).getAll();
+    req.onsuccess = async () => {
+      const items = req.result || [];
+      if (!items.length) return;
+      toast(`🔄 Menyinkronkan ${items.length} transaksi offline...`);
+      for (const it of items) {
+        try {
+          const fd = new FormData();
+          if (it.imageBlob) fd.append("image", it.imageBlob, "bukti-qris.jpg");
+          fd.append("amount", String(it.amount));
+          fd.append("isSurplus", String(Boolean(it.isSurplus)));
+          if (it.note) fd.append("note", it.note);
+          if (it.customDate) fd.append("customDate", it.customDate);
+          if (it.customTime) fd.append("customTime", it.customTime);
+
+          const res = await fetch("/api/receipts", { method: "POST", body: fd });
+          if (res.ok) {
+            const delTx = db.transaction(OFFLINE_STORE, "readwrite");
+            delTx.objectStore(OFFLINE_STORE).delete(it.id);
+          }
+        } catch (_) {
+          break;
+        }
+      }
+      toast("✅ Sinkronisasi transaksi offline selesai!");
+      if (!e.historyPage.classList.contains("hidden")) {
+        loadHistory();
+      }
+    };
+  } catch (err) {
+    console.warn("Offline sync error:", err);
+  }
+}
+
+window.addEventListener("online", syncOfflineQueue);
+window.addEventListener("qriskas:online", syncOfflineQueue);
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(err => console.log("SW error:", err));
+  });
+}
 
