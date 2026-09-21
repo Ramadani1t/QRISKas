@@ -17,6 +17,7 @@
 
 🌐 **Website Utama**: [tahunyakrispiya.my.id](https://tahunyakrispiya.my.id)  
 📱 **Aplikasi Kasir**: [scan.tahunyakrispiya.my.id](https://scan.tahunyakrispiya.my.id)  
+🤖 **Download APK Android**: [**QRISKas Mobile (GitHub Releases)**](https://github.com/Ramadani1t/QRISKas/releases/latest)  
 🗄️ **CDN Bukti Foto**: `https://qrisdata.tahunyakrispiya.my.id`
 
 ---
@@ -112,6 +113,27 @@ npx wrangler secret put DELETE_PIN
 ```bash
 npm run deploy
 ```
+
+---
+
+## 📱 QRISKas Mobile (Android APK)
+
+Tersedia aplikasi Android native dengan akses kamera hardware-level, offline-first, dan performa sat-set.
+
+| Platform | Status | Download |
+|----------|--------|----------|
+| 🤖 **Android** | ✅ Tersedia | [**Download APK Terbaru**](https://github.com/Ramadani1t/QRISKas/releases/latest) |
+| 🍎 **iOS** | ❌ Belum tersedia | Gunakan PWA via Safari → "Add to Home Screen" |
+
+### Cara Membuat Release APK Baru
+```bash
+# Tag versi baru dan push ke GitHub
+git tag v1.0.0
+git push origin v1.0.0
+```
+GitHub Actions akan otomatis build APK dan membuat Release.
+
+> 📖 Dokumentasi lengkap mobile app: [`mobile/README.md`](./mobile/README.md)
 
 ---
 

@@ -1,4 +1,4 @@
-name: 🤖 Build QRISKAS Mobile APK
+name: 🤖 Build QRISKas Mobile APK
 
 on:
   push:

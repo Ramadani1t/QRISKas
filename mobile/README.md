@@ -1,60 +1,95 @@
-# 📱 QRISKAS Mobile — Android App (Hardware-Level Camera & Offline-First Sync)
+# 📱 QRISKas Mobile — Android App
 
-Aplikasi kasir mobile native untuk **QRISKAS (Tahunya Krispi-ya!)** yang dioptimalkan untuk ukuran file sangat ringan, waktu cold-start di bawah 1 detik (**sat-set**), akses langsung ke **hardware kamera belakang** untuk jepret bukti QRIS secara instan dengan resolusi penuh (Full HD), serta **dukungan penuh transaksi offline dengan auto-sinkronisasi saat online**.
+Aplikasi kasir mobile native untuk **QRISKas (Tahunya Krispiya)** yang dioptimalkan untuk ukuran file sangat ringan, waktu cold-start di bawah 1 detik (**sat-set**), akses langsung ke **hardware kamera belakang** untuk jepret bukti QRIS secara instan dengan resolusi penuh (Full HD), serta **dukungan penuh transaksi offline dengan auto-sinkronisasi saat online**.
+
+---
+
+## 📥 Download APK
+
+| Versi | Link Download | Min Android |
+|-------|--------------|-------------|
+| Latest | [**Download di GitHub Releases**](https://github.com/Ramadani1t/QRISKas/releases/latest) | Android 8.0+ (Oreo) |
+
+> **Cara Install**: Unduh file `.apk` → Buka file → Izinkan "Install dari sumber tidak dikenal" jika diminta → Selesai!
 
 ---
 
 ## 🚀 Fitur Utama & Arsitektur Sistem
 
-1. **Hardware Kamera Belakang Langsung (Level Hardware)**:
-   - **Kamera Belakang Fisik Terkunci**: Menggunakan Bundle Extras level hardware (`android.intent.extra.CAMERA_FACING = 0`, `android.intent.extra.USE_FRONT_CAMERA = false`, `LENS_FACING_FRONT = 0`) untuk memastikan kamera belakang selalu aktif (bukan kamera selfie).
-   - **FileProvider Full-HD Capture**: Foto jepretan kamera pihak ketiga / kamera bawaan HP disimpan via `androidx.core.content.FileProvider` (`Pictures/` directory) dan dikompresi ke citra resolusi tinggi (1600px, JPEG 85%) dengan auto-orientasi EXIF, bukan thumbnail buram/mini.
-   - **Live In-App Viewfinder (WebRTC / getUserMedia)**: Layar scanner kamera langsung di dalam aplikasi dengan izin kamera otomatis via `WebChromeClient.onPermissionRequest`.
+### 1. Hardware Kamera Belakang Langsung (Level Hardware)
+- **Kamera Belakang Fisik Terkunci**: Menggunakan Bundle Extras level hardware untuk memastikan kamera belakang selalu aktif (bukan kamera selfie).
+- **FileProvider Full-HD Capture**: Foto jepretan kamera disimpan via `FileProvider` dan dikompresi ke resolusi tinggi (1600px, JPEG 85%) dengan auto-orientasi EXIF.
+- **Live In-App Viewfinder**: Layar scanner kamera langsung di dalam aplikasi dengan izin kamera otomatis.
 
-2. **Offline-First Caching & Auto-Sync saat Online**:
-   - **Service Worker & WebView Cache**: Aset web (`/`, `/style.css`, `/history.css`, `/app.js`) dicache secara lokal (`LOAD_CACHE_ELSE_NETWORK`), sehingga aplikasi tetap terbuka mulus tanpa layar putih/error saat koneksi internet terputus.
-   - **Offline Queue**: Jika kasir mencatat transaksi/surplus saat offline, data tersimpan di memori lokal HP (`localStorage`).
-   - **Auto-Sync Otomatis**: Begitu koneksi internet tersambung kembali, Android `ConnectivityManager` dan event `online` secara otomatis mengirim antrean transaksi ke backend `/api/receipts`.
+### 2. Offline-First Caching & Auto-Sync
+- **Service Worker & WebView Cache**: Aset web dicache secara lokal, sehingga aplikasi tetap bisa digunakan saat koneksi internet terputus.
+- **Offline Queue**: Transaksi disimpan di memori lokal HP saat offline.
+- **Auto-Sync Otomatis**: Begitu online, transaksi otomatis dikirim ke server.
 
-3. **Performa Sat-Set & Haptic Feedback**:
-   - Hardware acceleration WebView aktif (`android:hardwareAccelerated="true"` dan `setLayerType(View.LAYER_TYPE_HARDWARE, null)`).
-   - Respon getar haptic native saat foto struk berhasil diproses (`window.QriskasAndroid.vibrate(100)`).
-   - Smart Back Button: Tombol back fisik Android menutup modal kamera/dialog terlebih dahulu sebelum keluar aplikasi.
+### 3. Performa Sat-Set & Haptic Feedback
+- Hardware acceleration WebView aktif.
+- Respon getar haptic native saat foto struk berhasil diproses.
+- Smart Back Button: Tutup modal/dialog dulu sebelum keluar aplikasi.
 
----
-
-## 🛠️ Langkah Menjalankan di Android Studio
-
-### 1. Prasyarat:
-- **Android Studio** (Hedgehog / Iguana / Jellyfish / Ladybug atau versi terbaru).
-- Android SDK Platform 34 & Build-Tools 34.0.0.
-- JDK 17.
-
-### 2. Buka Proyek di Android Studio:
-1. Buka aplikasi **Android Studio**.
-2. Pilih menu **File** $\to$ **Open...**
-3. Arahkan dan pilih folder:
-   ```
-   c:\ocr gas\mobile\android
-   ```
-4. Tunggu proses **Gradle Sync** selesai mengunduh dependensi dan mengindeks proyek.
-
-### 3. Menjalankan di HP Android:
-1. Sambungkan HP Android via kabel USB (pastikan *USB Debugging* aktif).
-2. Di Android Studio, pilih perangkat HP Anda di toolbar atas.
-3. Klik tombol hijau **Run 'app'** (`Shift + F10`).
+### 4. Fitur Transaksi Lengkap
+- **Mode Surplus**: Catat kelebihan uang kas
+- **Tukar QRIS ke Cash**: Potong laci kasir (tidak masuk omset)
+- **Label Revisi / Susulan**: Tandai transaksi koreksi agar bos bisa verifikasi mutasi bank
 
 ---
 
-## 📦 Cara Build File APK Rilis
+## 🛠️ Cara Build (Developer)
 
-### Cara 1: Lewat Terminal
+### Prasyarat
+- **Android Studio** (Hedgehog / Iguana / Jellyfish / Ladybug atau versi terbaru)
+- Android SDK Platform 34 & Build-Tools 34.0.0
+- JDK 17
+
+### Buka Proyek di Android Studio
+1. Buka **Android Studio**
+2. Pilih **File** → **Open...**
+3. Arahkan ke folder `mobile/android`
+4. Tunggu **Gradle Sync** selesai
+
+### Menjalankan di HP Android
+1. Sambungkan HP Android via USB (pastikan *USB Debugging* aktif)
+2. Pilih perangkat HP di toolbar atas
+3. Klik tombol **Run 'app'** (`Shift + F10`)
+
+### Build APK Rilis via Terminal
 ```bash
-cd c:\ocr gas\mobile\android
+cd mobile/android
 ./gradlew assembleRelease
 ```
-File APK rilis akan berada di folder:
-`mobile/android/app/build/outputs/apk/release/`
+File APK rilis → `mobile/android/app/build/outputs/apk/release/`
 
-### Cara 2: Lewat GitHub Actions CI Otomatis
-Setiap kali ada push ke branch `main`, workflow `.github/workflows/build-android.yml` di repository `Ramadani1t/QRISKas` akan otomatis mengompilasi APK dan mengunggahnya ke tab **GitHub Actions Artifacts** dengan nama **`qriskas-mobile-apk`**.
+### Build APK via GitHub Actions CI
+Setiap push ke `main` (path `mobile/android/**`), workflow CI otomatis mengompilasi APK.
+
+### Membuat Release di GitHub
+```bash
+# Buat tag versi dan push
+git tag v1.0.0
+git push origin v1.0.0
+```
+Workflow `release-android.yml` akan otomatis:
+1. Build APK rilis
+2. Membuat **GitHub Release** dengan APK siap download
+
+---
+
+## 🍎 iOS Support?
+
+Saat ini **QRISKas Mobile hanya tersedia untuk Android**. Namun, versi web (PWA) di [scan.tahunyakrispiya.my.id](https://scan.tahunyakrispiya.my.id) sudah bisa dipakai di Safari iOS dan bisa di-"Add to Home Screen" sebagai shortcut layaknya aplikasi native.
+
+> Untuk build iOS native diperlukan:
+> - Mac dengan macOS + Xcode (tidak bisa build di Windows/Linux)
+> - Apple Developer Account ($99/tahun)
+> - Signing Certificate & Provisioning Profile
+>
+> Jika diperlukan di masa depan, bisa dipertimbangkan menggunakan framework cross-platform seperti **Kotlin Multiplatform** atau **React Native**.
+
+---
+
+## 📄 Lisensi
+Hak Cipta © 2026 **Tahunya Krispiya**. Seluruh hak cipta dilindungi undang-undang.
