@@ -1,21 +1,27 @@
 const $=id=>document.getElementById(id);
 const ids=[
   "camera","cameraEmpty","startCamera","toggleCamMode","capture","nativeCamBtn","nativeCamInput","fileInput",
-  "openSurplusBtn","confirmSurplusBadge","confirmNoteDisplay",
+  "openCashoutBtn","openSurplusBtn","confirmSurplusBadge","confirmCashoutBadge","confirmRevisedBadge","confirmNoteDisplay",
   "result","preview","amount","save","manual","manualDialog","manualAmount","manualDate","manualTime",
-  "dateTimeFieldGroup","manualSurplusGroup","manualIsSurplus","manualNoteWrap","manualNote","displayDate","displayTime","applyManual",
+  "dateTimeFieldGroup","manualSurplusGroup","manualIsSurplus","manualNoteWrap","manualNote",
+  "manualCashoutGroup","manualIsCashout","manualCashoutNoteWrap","manualCashoutNote",
+  "manualRevisedGroup","manualIsRevised",
+  "displayDate","displayTime","applyManual",
   "surplusDialog","surplusAmount","surplusNote","surplusGalleryBtn","surplusGalleryText",
   "surplusFileInput","surplusPreviewWrap","surplusPreviewImg","removeSurplusPhoto","surplusAutoProofNote",
   "surplusDate","surplusTime","saveSurplusBtn",
+  "cashoutDialog","cashoutAmount","cashoutNote","cashoutGalleryBtn","cashoutGalleryText",
+  "cashoutFileInput","cashoutPreviewWrap","cashoutPreviewImg","removeCashoutPhoto","cashoutAutoProofNote",
+  "cashoutDate","cashoutTime","cashoutIsRevised","saveCashoutBtn",
   "rescan","canvas","success","shareText","share","copy","again","toast",
   "scanTab","historyTab","scanPage","historyPage","historyDate","historyLoading",
-  "historyEmpty","historyList","recapBox","recapSalesRow","recapSalesTotal","recapSurplusRow","recapSurplusTotal","recapDivider","historyTotal","shareRecap","copyRecap",
+  "historyEmpty","historyList","recapBox","recapSalesRow","recapSalesTotal","recapSurplusRow","recapSurplusTotal","recapCashoutRow","recapCashoutTotal","recapRevisedRow","recapRevisedCount","recapDivider","historyTotal","shareRecap","copyRecap",
   "groupedTransactions","groupedList","groupedSummaryBadge","groupedCopyBtn",
-  "editDialog","editAmount","editDate","editTime","editIsSurplus","editNoteWrap","editNote","editPinInput","saveEditBtn",
+  "editDialog","editAmount","editDate","editTime","editIsSurplus","editNoteWrap","editNote","editIsCashout","editIsRevised","editPinInput","saveEditBtn",
   "deleteDialog","deleteConfirmInfo","deletePinInput","deletePasswordInput","confirmDeleteBtn",
   "externalShortcut","settingsBtn","settingsDialog","settingDefaultCam","settingNativeCamMode","customPackageFields",
   "settingCustomPackage","settingShortcutEnabled","settingShortcutLabel","settingShortcutUrl","shortcutFields",
-  "settingSurplusEnabled","settingGroupedEnabled","settingRetentionDays","cleanNowBtn","saveSettingsBtn"
+  "settingSurplusEnabled","settingCashoutEnabled","settingRevisionEnabled","settingGroupedEnabled","settingRetentionDays","cleanNowBtn","saveSettingsBtn"
 ];
 const e=Object.fromEntries(ids.map(id=>[id,$(id)]));
 let stream,imageBlob,amount=0,recapText="",originalTime="",originalDate="",pendingDeleteRecord=null,pendingEditRecord=null;
@@ -24,20 +30,24 @@ let currentFacingMode=localStorage.getItem("preferredFacingMode")||"environment"
 let allVideoDevices=[];
 let currentDeviceIndex=0;
 let currentRole="kasir";
-let isSurplusMode=false,currentNote="",surplusSelectedBlob=null;
+let isSurplusMode=false,isCashoutMode=false,isRevisedMode=false,currentNote="",surplusSelectedBlob=null,cashoutSelectedBlob=null;
 
 const rupiah=n=>new Intl.NumberFormat("id-ID").format(n);
 const escapeHtml=s=>String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
-const formatReceiptLine=(time,amt,isSurplus,note)=>{
-  let tag="";
-  if(isSurplus&&note){
-    tag=` (Surplus: ${note})`;
-  }else if(isSurplus){
-    tag=` (Surplus)`;
+const formatReceiptLine=(time,amt,isSurplus,isCashout,isRevised,note)=>{
+  const tags=[];
+  if(isSurplus){
+    tags.push(note?`Surplus: ${note}`:"Surplus");
+  }else if(isCashout){
+    tags.push(note?`Tukar Cash: ${note}`:"Tukar Cash");
   }else if(note){
-    tag=` (${note})`;
+    tags.push(note);
   }
-  return `${time} - ${rupiah(amt)}${tag}`;
+  if(isRevised){
+    tags.push("Revisi");
+  }
+  const tagStr=tags.length?` (${tags.join(", ")})`:"";
+  return `${time} - ${rupiah(amt)}${tagStr}`;
 };
 const toast=t=>{e.toast.textContent=t;e.toast.classList.add("show");setTimeout(()=>e.toast.classList.remove("show"),2800)};
 const localDate=()=>{const p=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Jakarta",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(),v=Object.fromEntries(p.map(x=>[x.type,x.value]));return `${v.year}-${v.month}-${v.day}`};
@@ -55,7 +65,9 @@ function loadSettings(){
   const shortcutUrl=localStorage.getItem("shortcutUrl")||"https://tahunyakrispiya.my.id";
   const groupedEnabled=localStorage.getItem("groupedEnabled")!=="false";
   const surplusEnabled=localStorage.getItem("surplusEnabled")!=="false";
-  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled};
+  const cashoutEnabled=localStorage.getItem("cashoutEnabled")!=="false";
+  const revisionEnabled=localStorage.getItem("revisionEnabled")!=="false";
+  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled};
 }
 
 function applySettingsUI(s){
@@ -76,7 +88,10 @@ function applySettingsUI(s){
     if(e.settingsBtn) e.settingsBtn.style.display="none";
     if(e.externalShortcut) e.externalShortcut.style.display="none";
     if(e.openSurplusBtn) e.openSurplusBtn.style.display="none";
+    if(e.openCashoutBtn) e.openCashoutBtn.style.display="none";
     if(e.manualSurplusGroup) e.manualSurplusGroup.style.display="none";
+    if(e.manualCashoutGroup) e.manualCashoutGroup.style.display="none";
+    if(e.manualRevisedGroup) e.manualRevisedGroup.style.display="none";
     return;
   }
 
@@ -85,6 +100,17 @@ function applySettingsUI(s){
   }
   if(e.manualSurplusGroup){
     e.manualSurplusGroup.style.display=s.surplusEnabled?"block":"none";
+  }
+
+  if(e.openCashoutBtn){
+    e.openCashoutBtn.style.display=s.cashoutEnabled?"flex":"none";
+  }
+  if(e.manualCashoutGroup){
+    e.manualCashoutGroup.style.display=s.cashoutEnabled?"block":"none";
+  }
+
+  if(e.manualRevisedGroup){
+    e.manualRevisedGroup.style.display=s.revisionEnabled?"block":"none";
   }
 
   if(e.settingsBtn){
@@ -116,6 +142,8 @@ async function openSettingsModal(){
   if(e.settingShortcutLabel)e.settingShortcutLabel.value=s.shortcutLabel;
   if(e.settingShortcutUrl)e.settingShortcutUrl.value=s.shortcutUrl;
   if(e.settingSurplusEnabled)e.settingSurplusEnabled.checked=s.surplusEnabled;
+  if(e.settingCashoutEnabled)e.settingCashoutEnabled.checked=s.cashoutEnabled;
+  if(e.settingRevisionEnabled)e.settingRevisionEnabled.checked=s.revisionEnabled;
   if(e.settingGroupedEnabled)e.settingGroupedEnabled.checked=s.groupedEnabled;
 
   try{
@@ -143,6 +171,8 @@ async function saveSettings(ev){
   else if(!/^https?:\/\//i.test(shortcutUrl))shortcutUrl="https://"+shortcutUrl;
 
   const surplusEnabled=e.settingSurplusEnabled?e.settingSurplusEnabled.checked:true;
+  const cashoutEnabled=e.settingCashoutEnabled?e.settingCashoutEnabled.checked:true;
+  const revisionEnabled=e.settingRevisionEnabled?e.settingRevisionEnabled.checked:true;
   const groupedEnabled=e.settingGroupedEnabled?e.settingGroupedEnabled.checked:true;
   const retentionDays=Number(e.settingRetentionDays?.value||30);
 
@@ -162,9 +192,11 @@ async function saveSettings(ev){
   localStorage.setItem("shortcutLabel",shortcutLabel);
   localStorage.setItem("shortcutUrl",shortcutUrl);
   localStorage.setItem("surplusEnabled",String(surplusEnabled));
+  localStorage.setItem("cashoutEnabled",String(cashoutEnabled));
+  localStorage.setItem("revisionEnabled",String(revisionEnabled));
   localStorage.setItem("groupedEnabled",String(groupedEnabled));
 
-  applySettingsUI({facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled});
+  applySettingsUI({facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled});
   if(e.settingsDialog)e.settingsDialog.close();
   toast("Pengaturan disimpan");
 
@@ -386,7 +418,17 @@ function openManual(mode="default"){
   if(e.manualIsSurplus){
     e.manualIsSurplus.checked=Boolean(isSurplusMode);
     if(e.manualNoteWrap)e.manualNoteWrap.style.display=isSurplusMode?"block":"none";
-    if(e.manualNote)e.manualNote.value=currentNote||"";
+    if(e.manualNote)e.manualNote.value=isSurplusMode?currentNote:"";
+  }
+
+  if(e.manualIsCashout){
+    e.manualIsCashout.checked=Boolean(isCashoutMode);
+    if(e.manualCashoutNoteWrap)e.manualCashoutNoteWrap.style.display=isCashoutMode?"block":"none";
+    if(e.manualCashoutNote)e.manualCashoutNote.value=isCashoutMode?currentNote:"";
+  }
+
+  if(e.manualIsRevised){
+    e.manualIsRevised.checked=Boolean(isRevisedMode);
   }
 
   e.manualDialog.showModal();
@@ -401,9 +443,19 @@ async function useSource(s, source="camera"){
   imageBlob=await canvasBlob(e.canvas);
   e.preview.src=URL.createObjectURL(imageBlob);
   amount=0;e.amount.textContent="0";
-  isSurplusMode=false;currentNote="";
-  if(e.confirmSurplusBadge)e.confirmSurplusBadge.classList.add("hidden");
-  if(e.confirmNoteDisplay)e.confirmNoteDisplay.classList.add("hidden");
+  
+  // Update badge display berdasarkan state aktif
+  if(e.confirmSurplusBadge)e.confirmSurplusBadge.classList.toggle("hidden",!isSurplusMode);
+  if(e.confirmCashoutBadge)e.confirmCashoutBadge.classList.toggle("hidden",!isCashoutMode);
+  if(e.confirmRevisedBadge)e.confirmRevisedBadge.classList.toggle("hidden",!isRevisedMode);
+  if(e.confirmNoteDisplay){
+    if((isSurplusMode||isCashoutMode) && currentNote){
+      e.confirmNoteDisplay.textContent=`Catatan: ${currentNote}`;
+      e.confirmNoteDisplay.classList.remove("hidden");
+    }else{
+      e.confirmNoteDisplay.classList.add("hidden");
+    }
+  }
   
   const nowT=currentJakartaTime();
   const todayD=localDate();
@@ -432,17 +484,19 @@ async function save(){
     await queueOfflineReceipt({
       amount: String(amount),
       isSurplus: Boolean(isSurplusMode),
+      isCashout: Boolean(isCashoutMode),
+      isRevised: Boolean(isRevisedMode),
       note: currentNote,
       customDate: selectedDate,
       customTime: selectedTime,
       imageBlob: imageBlob
     });
-    const line=formatReceiptLine(selectedTime, amount, isSurplusMode, currentNote);
+    const line=formatReceiptLine(selectedTime, amount, isSurplusMode, isCashoutMode, isRevisedMode, currentNote);
     e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
-    toast("✅ Tersimpan di antrean offline! Akan otomatis disinkronkan saat ada internet.");
+    toast("Tersimpan di antrean offline! Akan otomatis disinkronkan saat ada internet.");
     e.save.disabled=false;
     e.save.textContent="Simpan";
     return;
@@ -453,6 +507,8 @@ async function save(){
     fd.append("image",imageBlob,"bukti-qris.jpg");
     fd.append("amount",String(amount));
     fd.append("isSurplus",String(Boolean(isSurplusMode)));
+    fd.append("isCashout",String(Boolean(isCashoutMode)));
+    fd.append("isRevised",String(Boolean(isRevisedMode)));
     if(currentNote) fd.append("note",currentNote);
     if(selectedDate) fd.append("customDate",selectedDate);
     if(selectedTime) fd.append("customTime",selectedTime);
@@ -464,7 +520,7 @@ async function save(){
     }
 
     const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(data.savedAt));
-    const line=formatReceiptLine(time,data.amount,data.isSurplus,data.note);
+    const line=formatReceiptLine(time,data.amount,data.isSurplus,data.isCashout,data.isRevised,data.note);
     e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
@@ -474,17 +530,19 @@ async function save(){
       await queueOfflineReceipt({
         amount: String(amount),
         isSurplus: Boolean(isSurplusMode),
+        isCashout: Boolean(isCashoutMode),
+        isRevised: Boolean(isRevisedMode),
         note: currentNote,
         customDate: selectedDate,
         customTime: selectedTime,
         imageBlob: imageBlob
       });
-      const line=formatReceiptLine(selectedTime, amount, isSurplusMode, currentNote);
+      const line=formatReceiptLine(selectedTime, amount, isSurplusMode, isCashoutMode, isRevisedMode, currentNote);
       e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
       e.result.classList.add("hidden");
       e.success.classList.remove("hidden");
       e.success.scrollIntoView({behavior:"smooth"});
-      toast("✅ Tersimpan di antrean offline! Akan otomatis disinkronkan saat ada internet.");
+      toast("Tersimpan di antrean offline! Akan otomatis disinkronkan saat ada internet.");
     } else {
       toast(x.message||"Gagal menyimpan");
     }
@@ -496,13 +554,19 @@ function reset(){
   e.result.classList.add("hidden");
   e.success.classList.add("hidden");
   imageBlob=null;amount=0;
-  isSurplusMode=false;currentNote="";
-  surplusSelectedBlob=null;
+  isSurplusMode=false;isCashoutMode=false;isRevisedMode=false;currentNote="";
+  surplusSelectedBlob=null;cashoutSelectedBlob=null;
   if(e.confirmSurplusBadge)e.confirmSurplusBadge.classList.add("hidden");
+  if(e.confirmCashoutBadge)e.confirmCashoutBadge.classList.add("hidden");
+  if(e.confirmRevisedBadge)e.confirmRevisedBadge.classList.add("hidden");
   if(e.confirmNoteDisplay)e.confirmNoteDisplay.classList.add("hidden");
   if(e.manualIsSurplus)e.manualIsSurplus.checked=false;
   if(e.manualNoteWrap)e.manualNoteWrap.style.display="none";
   if(e.manualNote)e.manualNote.value="";
+  if(e.manualIsCashout)e.manualIsCashout.checked=false;
+  if(e.manualCashoutNoteWrap)e.manualCashoutNoteWrap.style.display="none";
+  if(e.manualCashoutNote)e.manualCashoutNote.value="";
+  if(e.manualIsRevised)e.manualIsRevised.checked=false;
   window.scrollTo({top:0,behavior:"smooth"});
 }
 
@@ -537,7 +601,7 @@ async function generateSurplusProofImage(nominal,note,dateStr,timeStr){
 
   ctx.fillStyle="#38bdf8";
   ctx.font="bold 15px system-ui,sans-serif";
-  ctx.fillText("✨ BUKTI CATATAN SURPLUS ✨",400,119);
+  ctx.fillText("BUKTI CATATAN SURPLUS",400,119);
 
   ctx.fillStyle="#a89f82";
   ctx.font="14px system-ui,sans-serif";
@@ -577,6 +641,77 @@ async function generateSurplusProofImage(nominal,note,dateStr,timeStr){
   return await canvasBlob(c,0.85);
 }
 
+async function generateCashoutProofImage(nominal,note,dateStr,timeStr){
+  const c=document.createElement("canvas");
+  c.width=800;c.height=600;
+  const ctx=c.getContext("2d");
+  const grad=ctx.createLinearGradient(0,0,800,600);
+  grad.addColorStop(0,"#1c1303");
+  grad.addColorStop(1,"#0b0701");
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,800,600);
+
+  ctx.strokeStyle="#fbbf24";
+  ctx.lineWidth=6;
+  ctx.strokeRect(16,16,768,568);
+
+  ctx.strokeStyle="#4a3410";
+  ctx.lineWidth=2;
+  ctx.strokeRect(26,26,748,548);
+
+  ctx.fillStyle="#ffd000";
+  ctx.font="bold 22px system-ui,sans-serif";
+  ctx.textAlign="center";
+  ctx.fillText("TAHUNYA KRISPIYA • QRIS KAS",400,75);
+
+  ctx.fillStyle="rgba(251,191,36,0.15)";
+  ctx.fillRect(180,95,440,36);
+  ctx.strokeStyle="#fbbf24";
+  ctx.lineWidth=1.5;
+  ctx.strokeRect(180,95,440,36);
+
+  ctx.fillStyle="#fbbf24";
+  ctx.font="bold 14px system-ui,sans-serif";
+  ctx.fillText("BUKTI TUKAR QRIS KE CASH (POTONG LACI)",400,119);
+
+  ctx.fillStyle="#a89f82";
+  ctx.font="14px system-ui,sans-serif";
+  ctx.fillText("NOMINAL UANG FISIK DITUKARKAN",400,180);
+
+  ctx.fillStyle="#ffffff";
+  ctx.font="900 58px system-ui,sans-serif";
+  ctx.fillText(`Rp${rupiah(nominal)}`,400,245);
+
+  ctx.fillStyle="#140d02";
+  ctx.fillRect(70,285,660,200);
+  ctx.strokeStyle="#4a3410";
+  ctx.lineWidth=1.5;
+  ctx.strokeRect(70,285,660,200);
+
+  ctx.textAlign="left";
+  ctx.fillStyle="#a89f82";
+  ctx.font="bold 14px system-ui,sans-serif";
+  ctx.fillText("WAKTU TRANSAKSI",100,325);
+  ctx.fillStyle="#fffef5";
+  ctx.font="16px system-ui,sans-serif";
+  ctx.fillText(`${dateStr} • ${timeStr} WIB`,100,350);
+
+  ctx.fillStyle="#a89f82";
+  ctx.font="bold 14px system-ui,sans-serif";
+  ctx.fillText("KETERANGAN KASIR",100,395);
+  ctx.fillStyle="#fbbf24";
+  ctx.font="italic 16px system-ui,sans-serif";
+  const noteText=note||"Tukar QRIS ke Uang Tunai (Potong Kas Laci Kasir)";
+  ctx.fillText(noteText.length>55?noteText.slice(0,52)+"...":noteText,100,422);
+
+  ctx.textAlign="center";
+  ctx.fillStyle="#a89f82";
+  ctx.font="12px system-ui,sans-serif";
+  ctx.fillText("Tercatat Resmi di Sistem Kasir Digital • Tidak Dihitung Sebagai Omset Penjualan",400,535);
+
+  return await canvasBlob(c,0.85);
+}
+
 function openSurplusModal(){
   if(e.surplusAmount)e.surplusAmount.value="";
   if(e.surplusNote)e.surplusNote.value="";
@@ -590,6 +725,23 @@ function openSurplusModal(){
   if(e.surplusDialog){
     e.surplusDialog.showModal();
     setTimeout(()=>e.surplusAmount?.focus(),100);
+  }
+}
+
+function openCashoutModal(){
+  if(e.cashoutAmount)e.cashoutAmount.value="";
+  if(e.cashoutNote)e.cashoutNote.value="";
+  if(e.cashoutDate)e.cashoutDate.value=localDate();
+  if(e.cashoutTime)e.cashoutTime.value=currentJakartaTime();
+  if(e.cashoutIsRevised)e.cashoutIsRevised.checked=false;
+  cashoutSelectedBlob=null;
+  if(e.cashoutPreviewWrap)e.cashoutPreviewWrap.classList.add("hidden");
+  if(e.cashoutPreviewImg)e.cashoutPreviewImg.src="";
+  if(e.cashoutGalleryText)e.cashoutGalleryText.textContent="Pilih Foto Bukti dari Galeri";
+  if(e.cashoutFileInput)e.cashoutFileInput.value="";
+  if(e.cashoutDialog){
+    e.cashoutDialog.showModal();
+    setTimeout(()=>e.cashoutAmount?.focus(),100);
   }
 }
 
@@ -616,18 +768,20 @@ async function saveSurplus(ev){
     await queueOfflineReceipt({
       amount: String(sAmount),
       isSurplus: true,
+      isCashout: false,
+      isRevised: false,
       note: sNote,
       customDate: sDate,
       customTime: sTime,
       imageBlob: finalBlob
     });
-    const line=formatReceiptLine(sTime,sAmount,true,sNote);
+    const line=formatReceiptLine(sTime,sAmount,true,false,false,sNote);
     e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
     if(e.surplusDialog)e.surplusDialog.close();
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
-    toast("✨ Surplus tersimpan di antrean offline! Akan disinkronkan saat ada internet.");
+    toast("Surplus tersimpan di antrean offline!");
     if(e.saveSurplusBtn){
       e.saveSurplusBtn.disabled=false;
       e.saveSurplusBtn.textContent="Simpan Surplus";
@@ -647,6 +801,8 @@ async function saveSurplus(ev){
     fd.append("customDate",sDate);
     fd.append("customTime",sTime);
     fd.append("isSurplus","true");
+    fd.append("isCashout","false");
+    fd.append("isRevised","false");
     if(sNote)fd.append("note",sNote);
 
     const response=await fetch("/api/receipts",{method:"POST",body:fd});
@@ -662,7 +818,7 @@ async function saveSurplus(ev){
       hourCycle:"h23"
     }).format(new Date(data.savedAt));
 
-    const line=formatReceiptLine(time,data.amount,true,data.note);
+    const line=formatReceiptLine(time,data.amount,true,false,false,data.note);
     e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     if(e.surplusDialog)e.surplusDialog.close();
 
@@ -679,18 +835,20 @@ async function saveSurplus(ev){
       await queueOfflineReceipt({
         amount: String(sAmount),
         isSurplus: true,
+        isCashout: false,
+        isRevised: false,
         note: sNote,
         customDate: sDate,
         customTime: sTime,
         imageBlob: finalBlob
       });
-      const line=formatReceiptLine(sTime,sAmount,true,sNote);
+      const line=formatReceiptLine(sTime,sAmount,true,false,false,sNote);
       e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
       if(e.surplusDialog)e.surplusDialog.close();
       e.result.classList.add("hidden");
       e.success.classList.remove("hidden");
       e.success.scrollIntoView({behavior:"smooth"});
-      toast("✨ Surplus tersimpan di antrean offline! Akan disinkronkan saat ada internet.");
+      toast("Surplus tersimpan di antrean offline!");
     } else {
       toast(err.message||"Gagal menyimpan surplus");
     }
@@ -698,6 +856,121 @@ async function saveSurplus(ev){
     if(e.saveSurplusBtn){
       e.saveSurplusBtn.disabled=false;
       e.saveSurplusBtn.textContent="Simpan Surplus";
+    }
+  }
+}
+
+async function saveCashout(ev){
+  ev.preventDefault();
+  const cAmount=Number(e.cashoutAmount.value.replace(/\D/g,""));
+  if(!cAmount)return toast("Masukkan nominal tukar cash yang benar");
+
+  const cNote=(e.cashoutNote.value||"").trim();
+  const cDate=e.cashoutDate.value||localDate();
+  const cTime=e.cashoutTime.value||currentJakartaTime();
+  const cRevised=e.cashoutIsRevised?e.cashoutIsRevised.checked:false;
+
+  if(e.saveCashoutBtn){
+    e.saveCashoutBtn.disabled=true;
+    e.saveCashoutBtn.textContent="Menyimpan…";
+  }
+
+  // Jika sedang offline
+  if(!navigator.onLine){
+    let finalBlob=cashoutSelectedBlob;
+    if(!finalBlob){
+      finalBlob=await generateCashoutProofImage(cAmount,cNote,cDate,cTime);
+    }
+    await queueOfflineReceipt({
+      amount: String(cAmount),
+      isSurplus: false,
+      isCashout: true,
+      isRevised: cRevised,
+      note: cNote,
+      customDate: cDate,
+      customTime: cTime,
+      imageBlob: finalBlob
+    });
+    const line=formatReceiptLine(cTime,cAmount,false,true,cRevised,cNote);
+    e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
+    if(e.cashoutDialog)e.cashoutDialog.close();
+    e.result.classList.add("hidden");
+    e.success.classList.remove("hidden");
+    e.success.scrollIntoView({behavior:"smooth"});
+    toast("Tukar cash tersimpan di antrean offline!");
+    if(e.saveCashoutBtn){
+      e.saveCashoutBtn.disabled=false;
+      e.saveCashoutBtn.textContent="Simpan Tukar Cash";
+    }
+    return;
+  }
+
+  try{
+    let finalBlob=cashoutSelectedBlob;
+    if(!finalBlob){
+      finalBlob=await generateCashoutProofImage(cAmount,cNote,cDate,cTime);
+    }
+
+    const fd=new FormData();
+    fd.append("image",finalBlob,"bukti-tukar-cash.jpg");
+    fd.append("amount",String(cAmount));
+    fd.append("customDate",cDate);
+    fd.append("customTime",cTime);
+    fd.append("isCashout","true");
+    fd.append("isRevised",String(cRevised));
+    if(cNote)fd.append("note",cNote);
+
+    const response=await fetch("/api/receipts",{method:"POST",body:fd});
+    const data=await response.json();
+    if(!response.ok){
+      throw new Error(data.error);
+    }
+
+    const time=new Intl.DateTimeFormat("en-GB",{
+      timeZone:"Asia/Jakarta",
+      hour:"2-digit",
+      minute:"2-digit",
+      hourCycle:"h23"
+    }).format(new Date(data.savedAt));
+
+    const line=formatReceiptLine(time,data.amount,false,true,data.isRevised,data.note);
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    if(e.cashoutDialog)e.cashoutDialog.close();
+
+    e.result.classList.add("hidden");
+    e.success.classList.remove("hidden");
+    e.success.scrollIntoView({behavior:"smooth"});
+    toast("Tukar cash berhasil dicatat!");
+  }catch(err){
+    if(!navigator.onLine || err.message?.includes("fetch") || err.message?.includes("NetworkError")){
+      let finalBlob=cashoutSelectedBlob;
+      if(!finalBlob){
+        finalBlob=await generateCashoutProofImage(cAmount,cNote,cDate,cTime);
+      }
+      await queueOfflineReceipt({
+        amount: String(cAmount),
+        isSurplus: false,
+        isCashout: true,
+        isRevised: cRevised,
+        note: cNote,
+        customDate: cDate,
+        customTime: cTime,
+        imageBlob: finalBlob
+      });
+      const line=formatReceiptLine(cTime,cAmount,false,true,cRevised,cNote);
+      e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
+      if(e.cashoutDialog)e.cashoutDialog.close();
+      e.result.classList.add("hidden");
+      e.success.classList.remove("hidden");
+      e.success.scrollIntoView({behavior:"smooth"});
+      toast("Tukar cash tersimpan di antrean offline!");
+    } else {
+      toast(err.message||"Gagal menyimpan tukar cash");
+    }
+  }finally{
+    if(e.saveCashoutBtn){
+      e.saveCashoutBtn.disabled=false;
+      e.saveCashoutBtn.textContent="Simpan Tukar Cash";
     }
   }
 }
@@ -741,6 +1014,8 @@ function openEditRecord(record){
   if(!time) time=currentJakartaTime();
   if(e.editTime) e.editTime.value=time;
   if(e.editIsSurplus)e.editIsSurplus.checked=Boolean(record.isSurplus);
+  if(e.editIsCashout)e.editIsCashout.checked=Boolean(record.isCashout);
+  if(e.editIsRevised)e.editIsRevised.checked=Boolean(record.isRevised);
   if(e.editNote)e.editNote.value=record.note||"";
   
   if(e.editPinInput)e.editPinInput.value=sessionStorage.getItem("deletePin")||"";
@@ -757,6 +1032,8 @@ async function handleSaveEdit(ev){
   const newTime=(e.editTime?.value||"").trim();
   if(!newTime)return toast("Jam transaksi wajib diisi");
   const newIsSurplus=e.editIsSurplus?e.editIsSurplus.checked:false;
+  const newIsCashout=e.editIsCashout?e.editIsCashout.checked:false;
+  const newIsRevised=e.editIsRevised?e.editIsRevised.checked:false;
   const newNote=(e.editNote?.value||"").trim();
   const pin=(e.editPinInput?.value||"").trim();
   if(!pin)return toast("PIN 6-digit wajib diisi");
@@ -770,7 +1047,12 @@ async function handleSaveEdit(ev){
     const response=await fetch("/api/receipts",{
       method:"PUT",
       headers:{"content-type":"application/json","x-delete-pin":pin},
-      body:JSON.stringify({recordKey:pendingEditRecord.recordKey,newAmount,newDate,newTime,newIsSurplus,newNote})
+      body:JSON.stringify({
+        recordKey:pendingEditRecord.recordKey,
+        newAmount,newDate,newTime,
+        newIsSurplus,newIsCashout,newIsRevised,
+        newNote
+      })
     });
     const data=await response.json();
     if(!response.ok){
@@ -876,23 +1158,30 @@ async function loadHistory(init=false){
 
     // Hitung total dan kelompokkan transaksi dengan nominal yang sama
     const groupMap=new Map();
-    let total=0, salesTotal=0, surplusTotal=0;
+    let total=0, salesTotal=0, surplusTotal=0, cashoutTotal=0, revisedCount=0;
     const lines=[],links=[];
     for(const [index,r] of data.records.entries()){
       total+=r.amount;
       const isSurplus=Boolean(r.isSurplus);
+      const isCashout=Boolean(r.isCashout);
+      const isRevised=Boolean(r.isRevised);
       if(isSurplus){
         surplusTotal+=r.amount;
+      }else if(isCashout){
+        cashoutTotal+=r.amount;
       }else{
         salesTotal+=r.amount;
       }
+      if(isRevised){
+        revisedCount++;
+      }
 
       const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(r.savedAt));
-      const line=formatReceiptLine(time,r.amount,isSurplus,r.note);
+      const line=formatReceiptLine(time,r.amount,isSurplus,isCashout,isRevised,r.note);
       lines.push(`${index+1}. ${line}`);
       links.push(`${index+1}. ${r.imageUrl}`);
 
-      if(!isSurplus){
+      if(!isSurplus && !isCashout){
         if(!groupMap.has(r.amount)){
           groupMap.set(r.amount,{amount:r.amount,count:0,total:0,times:[]});
         }
@@ -903,13 +1192,17 @@ async function loadHistory(init=false){
       }
 
       const item=document.createElement("article");
-      item.className=`history-item${isSurplus?" is-surplus":""}`;
-      const surplusBadgeHtml=isSurplus?`<span class="badge-surplus">✨ SURPLUS</span>`:"";
+      item.className=`history-item${isSurplus?" is-surplus":""}${isCashout?" is-cashout":""}${isRevised?" is-revised":""}`;
+      
+      const surplusBadgeHtml=isSurplus?`<span class="badge-surplus"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><span>SURPLUS</span></span>`:"";
+      const cashoutBadgeHtml=isCashout?`<span class="badge-cashout"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg><span>TUKAR CASH</span></span>`:"";
+      const revisedBadgeHtml=isRevised?`<span class="badge-revised"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg><span>REVISI</span></span>`:"";
+
       const safeNote=escapeHtml(r.note);
       const noteHtml=r.note?`<div class="history-item-note" title="${safeNote}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><span>${safeNote}</span></div>`:"";
       const adminActionsHtml=data.role==="admin"?`<button class="edit-record" type="button" aria-label="Edit transaksi">Edit</button><button class="delete-record" type="button" aria-label="Hapus transaksi">Hapus</button>`:"";
 
-      item.innerHTML=`<img class="history-item-thumb" src="${r.imageUrl}" alt="Bukti ${isSurplus?"Surplus":"QRIS"}" loading="lazy"><div class="history-item-body"><div class="history-item-header"><div class="history-item-meta"><time class="history-item-time">${time} WIB</time>${surplusBadgeHtml}</div><div class="history-item-actions"><button class="copy-record" type="button" title="Salin transaksi ini">Salin</button>${adminActionsHtml}</div></div><strong class="history-item-amount">Rp${rupiah(r.amount)}</strong>${noteHtml}<a class="history-item-link" href="${r.imageUrl}" target="_blank" rel="noopener"><span>Lihat foto bukti</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></div>`;
+      item.innerHTML=`<img class="history-item-thumb" src="${r.imageUrl}" alt="Bukti ${isSurplus?"Surplus":isCashout?"Tukar Cash":"QRIS"}" loading="lazy"><div class="history-item-body"><div class="history-item-header"><div class="history-item-meta"><time class="history-item-time">${time} WIB</time>${surplusBadgeHtml}${cashoutBadgeHtml}${revisedBadgeHtml}</div><div class="history-item-actions"><button class="copy-record" type="button" title="Salin transaksi ini">Salin</button>${adminActionsHtml}</div></div><strong class="history-item-amount">Rp${rupiah(r.amount)}</strong>${noteHtml}<a class="history-item-link" href="${r.imageUrl}" target="_blank" rel="noopener"><span>Lihat foto bukti</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></div>`;
       item.querySelector(".copy-record").onclick=async()=>{
         await navigator.clipboard.writeText(`${line} gambar ${r.imageUrl}`);
         toast("Transaksi disalin");
@@ -963,23 +1256,31 @@ async function loadHistory(init=false){
       };
     }
 
-    let recapTotalsText=`*Total QRIS: ${rupiah(total)}*`;
+    const recapBreakdown=[];
+    recapBreakdown.push(`*Total Penjualan: Rp${rupiah(salesTotal)}*`);
+    if(cashoutTotal>0){
+      recapBreakdown.push(`*Tukar Cash (Potong Laci): -Rp${rupiah(cashoutTotal)}*`);
+    }
     if(surplusTotal>0){
-      recapTotalsText=`*Total Penjualan: ${rupiah(salesTotal)}*\n*Total Surplus: ${rupiah(surplusTotal)}*\n*Grand Total QRIS: ${rupiah(total)}*`;
+      recapBreakdown.push(`*Total Surplus: +Rp${rupiah(surplusTotal)}*`);
+    }
+    recapBreakdown.push(`*Grand Total QRIS Bank: Rp${rupiah(total)}*`);
+    if(revisedCount>0){
+      recapBreakdown.push(`*Catatan: ${revisedCount} transaksi berlabel Revisi/Susulan*`);
     }
 
-    recapText=`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapTotalsText}\n\nLink bukti:\n${links.join("\n")}`;
+    recapText=`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}\n\nLink bukti:\n${links.join("\n")}`;
     if(e.recapSalesTotal)e.recapSalesTotal.textContent=`Rp${rupiah(salesTotal)}`;
-    if(e.recapSurplusTotal)e.recapSurplusTotal.textContent=`Rp${rupiah(surplusTotal)}`;
+    if(e.recapSurplusTotal)e.recapSurplusTotal.textContent=`+Rp${rupiah(surplusTotal)}`;
+    if(e.recapCashoutTotal)e.recapCashoutTotal.textContent=`-Rp${rupiah(cashoutTotal)}`;
+    if(e.recapRevisedCount)e.recapRevisedCount.textContent=`${revisedCount} trx`;
     if(e.historyTotal)e.historyTotal.textContent=`Rp${rupiah(total)}`;
 
-    if(surplusTotal>0){
-      if(e.recapSurplusRow)e.recapSurplusRow.style.display="flex";
-      if(e.recapDivider)e.recapDivider.style.display="block";
-    }else{
-      if(e.recapSurplusRow)e.recapSurplusRow.style.display="none";
-      if(e.recapDivider)e.recapDivider.style.display="none";
-    }
+    const hasSpecialRows=surplusTotal>0||cashoutTotal>0||revisedCount>0;
+    if(e.recapSurplusRow)e.recapSurplusRow.style.display=surplusTotal>0?"flex":"none";
+    if(e.recapCashoutRow)e.recapCashoutRow.style.display=cashoutTotal>0?"flex":"none";
+    if(e.recapRevisedRow)e.recapRevisedRow.style.display=revisedCount>0?"flex":"none";
+    if(e.recapDivider)e.recapDivider.style.display=hasSpecialRows?"block":"none";
 
     e.recapBox.classList.remove("hidden");
   }catch(x){toast(x.message||"Riwayat gagal dimuat");}
@@ -1122,17 +1423,34 @@ e.applyManual.onclick=x=>{
   if(e.manualTime && e.displayTime)e.displayTime.value=e.manualTime.value;
   if(e.manualDate && e.displayDate)e.displayDate.value=e.manualDate.value;
 
-  if(e.manualIsSurplus){
-    isSurplusMode=e.manualIsSurplus.checked;
-    currentNote=isSurplusMode?(e.manualNote?.value||"").trim():"";
-    if(e.confirmSurplusBadge)e.confirmSurplusBadge.classList.toggle("hidden",!isSurplusMode);
-    if(e.confirmNoteDisplay){
-      if(isSurplusMode && currentNote){
-        e.confirmNoteDisplay.textContent=`Catatan: ${currentNote}`;
-        e.confirmNoteDisplay.classList.remove("hidden");
-      }else{
-        e.confirmNoteDisplay.classList.add("hidden");
-      }
+  if(e.manualIsSurplus && e.manualIsSurplus.checked){
+    isSurplusMode=true;
+    isCashoutMode=false;
+    currentNote=(e.manualNote?.value||"").trim();
+  } else if(e.manualIsCashout && e.manualIsCashout.checked){
+    isCashoutMode=true;
+    isSurplusMode=false;
+    currentNote=(e.manualCashoutNote?.value||"").trim();
+  } else {
+    isSurplusMode=false;
+    isCashoutMode=false;
+    currentNote="";
+  }
+
+  if(e.manualIsRevised){
+    isRevisedMode=e.manualIsRevised.checked;
+  }
+
+  if(e.confirmSurplusBadge)e.confirmSurplusBadge.classList.toggle("hidden",!isSurplusMode);
+  if(e.confirmCashoutBadge)e.confirmCashoutBadge.classList.toggle("hidden",!isCashoutMode);
+  if(e.confirmRevisedBadge)e.confirmRevisedBadge.classList.toggle("hidden",!isRevisedMode);
+
+  if(e.confirmNoteDisplay){
+    if((isSurplusMode||isCashoutMode) && currentNote){
+      e.confirmNoteDisplay.textContent=`Catatan: ${currentNote}`;
+      e.confirmNoteDisplay.classList.remove("hidden");
+    }else{
+      e.confirmNoteDisplay.classList.add("hidden");
     }
   }
 
@@ -1141,11 +1459,50 @@ e.applyManual.onclick=x=>{
 
 if(e.manualIsSurplus){
   e.manualIsSurplus.onchange=()=>{
-    if(e.manualNoteWrap){
-      e.manualNoteWrap.style.display=e.manualIsSurplus.checked?"block":"none";
-      if(e.manualIsSurplus.checked && e.manualNote){
-        setTimeout(()=>e.manualNote.focus(),100);
+    if(e.manualIsSurplus.checked){
+      if(e.manualIsCashout){
+        e.manualIsCashout.checked=false;
+        if(e.manualCashoutNoteWrap)e.manualCashoutNoteWrap.style.display="none";
       }
+      if(e.manualNoteWrap){
+        e.manualNoteWrap.style.display="block";
+        if(e.manualNote)setTimeout(()=>e.manualNote.focus(),100);
+      }
+    }else{
+      if(e.manualNoteWrap)e.manualNoteWrap.style.display="none";
+    }
+  };
+}
+
+if(e.manualIsCashout){
+  e.manualIsCashout.onchange=()=>{
+    if(e.manualIsCashout.checked){
+      if(e.manualIsSurplus){
+        e.manualIsSurplus.checked=false;
+        if(e.manualNoteWrap)e.manualNoteWrap.style.display="none";
+      }
+      if(e.manualCashoutNoteWrap){
+        e.manualCashoutNoteWrap.style.display="block";
+        if(e.manualCashoutNote)setTimeout(()=>e.manualCashoutNote.focus(),100);
+      }
+    }else{
+      if(e.manualCashoutNoteWrap)e.manualCashoutNoteWrap.style.display="none";
+    }
+  };
+}
+
+if(e.editIsSurplus){
+  e.editIsSurplus.onchange=()=>{
+    if(e.editIsSurplus.checked && e.editIsCashout){
+      e.editIsCashout.checked=false;
+    }
+  };
+}
+
+if(e.editIsCashout){
+  e.editIsCashout.onchange=()=>{
+    if(e.editIsCashout.checked && e.editIsSurplus){
+      e.editIsSurplus.checked=false;
     }
   };
 }
@@ -1187,6 +1544,46 @@ if(e.removeSurplusPhoto){
     if(e.surplusPreviewImg)e.surplusPreviewImg.src="";
     if(e.surplusGalleryText)e.surplusGalleryText.textContent="Pilih Foto Bukti dari Galeri";
     if(e.surplusFileInput)e.surplusFileInput.value="";
+  };
+}
+
+if(e.openCashoutBtn) e.openCashoutBtn.onclick=openCashoutModal;
+if(e.saveCashoutBtn) e.saveCashoutBtn.onclick=saveCashout;
+
+if(e.cashoutAmount){
+  e.cashoutAmount.oninput=()=>{
+    const d=e.cashoutAmount.value.replace(/\D/g,"");
+    e.cashoutAmount.value=d?rupiah(Number(d)):"";
+  };
+}
+
+if(e.cashoutFileInput){
+  e.cashoutFileInput.onchange=()=>{
+    const f=e.cashoutFileInput.files[0];
+    if(!f)return;
+    const img=new Image();
+    img.onload=async()=>{
+      const w=img.naturalWidth,h=img.naturalHeight,max=1100,z=Math.min(1,max/w);
+      e.canvas.width=Math.round(w*z);
+      e.canvas.height=Math.round(h*z);
+      e.canvas.getContext("2d").drawImage(img,0,0,e.canvas.width,e.canvas.height);
+      cashoutSelectedBlob=await canvasBlob(e.canvas);
+      if(e.cashoutPreviewImg)e.cashoutPreviewImg.src=URL.createObjectURL(cashoutSelectedBlob);
+      if(e.cashoutPreviewWrap)e.cashoutPreviewWrap.classList.remove("hidden");
+      if(e.cashoutGalleryText)e.cashoutGalleryText.textContent="Ganti Foto Bukti Galeri";
+      URL.revokeObjectURL(img.src);
+    };
+    img.src=URL.createObjectURL(f);
+  };
+}
+
+if(e.removeCashoutPhoto){
+  e.removeCashoutPhoto.onclick=()=>{
+    cashoutSelectedBlob=null;
+    if(e.cashoutPreviewWrap)e.cashoutPreviewWrap.classList.add("hidden");
+    if(e.cashoutPreviewImg)e.cashoutPreviewImg.src="";
+    if(e.cashoutGalleryText)e.cashoutGalleryText.textContent="Pilih Foto Bukti dari Galeri";
+    if(e.cashoutFileInput)e.cashoutFileInput.value="";
   };
 }
 
@@ -1267,13 +1664,15 @@ async function syncOfflineQueue() {
     req.onsuccess = async () => {
       const items = req.result || [];
       if (!items.length) return;
-      toast(`🔄 Menyinkronkan ${items.length} transaksi offline...`);
+      toast(`Menyinkronkan ${items.length} transaksi offline...`);
       for (const it of items) {
         try {
           const fd = new FormData();
           if (it.imageBlob) fd.append("image", it.imageBlob, "bukti-qris.jpg");
           fd.append("amount", String(it.amount));
           fd.append("isSurplus", String(Boolean(it.isSurplus)));
+          fd.append("isCashout", String(Boolean(it.isCashout)));
+          fd.append("isRevised", String(Boolean(it.isRevised)));
           if (it.note) fd.append("note", it.note);
           if (it.customDate) fd.append("customDate", it.customDate);
           if (it.customTime) fd.append("customTime", it.customTime);
@@ -1287,7 +1686,7 @@ async function syncOfflineQueue() {
           break;
         }
       }
-      toast("✅ Sinkronisasi transaksi offline selesai!");
+      toast("Sinkronisasi transaksi offline selesai!");
       if (!e.historyPage.classList.contains("hidden")) {
         loadHistory();
       }

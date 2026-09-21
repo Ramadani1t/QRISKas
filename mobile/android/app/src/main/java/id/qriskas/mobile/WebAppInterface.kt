@@ -33,6 +33,26 @@ class WebAppInterface(private val activity: MainActivity) {
     }
 
     /**
+     * Buka kamera aplikasi pihak ketiga tertentu (misal Aperture, OpenCamera, GCam).
+     */
+    @JavascriptInterface
+    fun openThirdPartyCamera(packageName: String?) {
+        activity.runOnUiThread {
+            activity.launchCustomOrChooserCamera(packageName)
+        }
+    }
+
+    /**
+     * Buka dialog pemilih kamera (Chooser) agar kasir bisa memilih aplikasi kamera mana yang mau dipakai.
+     */
+    @JavascriptInterface
+    fun openChooserCamera() {
+        activity.runOnUiThread {
+            activity.launchCustomOrChooserCamera(null)
+        }
+    }
+
+    /**
      * Haptic feedback getar native saat scan berhasil.
      */
     @JavascriptInterface

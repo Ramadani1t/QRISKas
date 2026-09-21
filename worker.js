@@ -228,6 +228,12 @@ export default {
         if (newIsSurplus !== undefined) {
           record.isSurplus = Boolean(newIsSurplus);
         }
+        if (newIsCashout !== undefined) {
+          record.isCashout = Boolean(newIsCashout);
+        }
+        if (newIsRevised !== undefined) {
+          record.isRevised = Boolean(newIsRevised);
+        }
 
         const [targetYear, targetMonth, targetDay] = datePart.split("-");
         const expectedPrefix = `records/${targetYear}/${targetMonth}/${targetDay}/`;
@@ -271,6 +277,8 @@ export default {
         const customDate = form.get("customDate");
         const customTime = form.get("customTime");
         const isSurplus = form.get("isSurplus") === "true" || form.get("type") === "surplus";
+        const isCashout = form.get("isCashout") === "true" || form.get("type") === "cashout";
+        const isRevised = form.get("isRevised") === "true" || form.get("isRevision") === "true";
         const note = form.get("note") ? String(form.get("note")).trim().slice(0, 250) : "";
         
         if (!(image instanceof File) || !image.type.startsWith("image/")) return json({ error: "Foto tidak valid." }, 400);
@@ -305,17 +313,17 @@ export default {
 
         const savedAt = `${targetYear}-${targetMonth}-${targetDay}T${targetHour}:${targetMinute}:${targetSecond}+07:00`;
         const id = crypto.randomUUID().slice(0, 8);
-        const prefixFlag = isSurplus ? "surplus" : "regular";
+        const prefixFlag = isSurplus ? "surplus" : (isCashout ? "cashout" : "regular");
         const base = `${targetYear}/${targetMonth}/${targetDay}/${targetHour}${targetMinute}${targetSecond}-${amount}-${prefixFlag}-${id}`;
         const imageKey = `images/${base}.jpg`;
         const recordKey = `records/${base}.json`;
 
-        const recordData = { amount, savedAt, imageKey, isSurplus, note };
+        const recordData = { amount, savedAt, imageKey, isSurplus, isCashout, isRevised, note };
 
         await Promise.all([
           env.RECEIPTS.put(imageKey, image.stream(), {
             httpMetadata: { contentType: "image/jpeg", cacheControl: "public, max-age=31536000, immutable" },
-            customMetadata: { amount: String(amount), savedAt, isSurplus: String(isSurplus), note }
+            customMetadata: { amount: String(amount), savedAt, isSurplus: String(isSurplus), isCashout: String(isCashout), isRevised: String(isRevised), note }
           }),
           env.RECEIPTS.put(recordKey, JSON.stringify(recordData), {
             httpMetadata: { contentType: "application/json" }
@@ -323,7 +331,7 @@ export default {
         ]);
         const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
         if (!publicBase || publicBase.includes("example.com")) return json({ error: "R2_PUBLIC_URL belum diatur.", saved: true }, 500);
-        return json({ amount, savedAt, isSurplus, note, imageUrl: `${publicBase}/${imageKey}` });
+        return json({ amount, savedAt, isSurplus, isCashout, isRevised, note, imageUrl: `${publicBase}/${imageKey}` });
       } catch (error) {
         return json({ error: "Gagal menyimpan bukti. Coba lagi.", detail: error.message }, 500);
       }

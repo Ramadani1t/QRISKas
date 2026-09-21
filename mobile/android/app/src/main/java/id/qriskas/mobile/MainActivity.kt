@@ -200,6 +200,24 @@ class MainActivity : AppCompatActivity() {
                         }
                         true
                     }
+                    url.startsWith("intent:") -> {
+                        try {
+                            val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+                            if (intent.resolveActivity(packageManager) != null) {
+                                startActivity(intent)
+                            } else {
+                                val fallbackUrl = intent.getStringExtra("browser_fallback_url")
+                                if (!fallbackUrl.isNullOrEmpty()) {
+                                    view.loadUrl(fallbackUrl)
+                                } else {
+                                    Toast.makeText(this@MainActivity, "Aplikasi kamera tidak ditemukan", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error handling intent scheme: $url", e)
+                        }
+                        true
+                    }
                     url.startsWith("http://") || url.startsWith("https://") -> {
                         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                         true
@@ -418,6 +436,42 @@ class MainActivity : AppCompatActivity() {
             hardwareCameraLauncher.launch(intent)
         } else {
             Toast.makeText(this, "Tidak dapat membuka kamera hardware", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * Dipanggil dari WebAppInterface untuk meluncurkan kamera package tertentu (misal Aperture) atau chooser.
+     */
+    fun launchCustomOrChooserCamera(packageName: String?) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingCameraLaunch = true
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CAMERA),
+                PERMISSION_REQ_CAMERA
+            )
+            return
+        }
+
+        val intent = createCameraIntent()
+        if (intent != null) {
+            if (!packageName.isNullOrBlank() && packageName != "default" && packageName != "chooser") {
+                try {
+                    intent.setPackage(packageName)
+                    if (intent.resolveActivity(packageManager) != null) {
+                        hardwareCameraLauncher.launch(intent)
+                        return
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to launch specific camera package: $packageName", e)
+                }
+            }
+            val chooser = Intent.createChooser(intent, "Buka Kamera Foto Struk")
+            hardwareCameraLauncher.launch(chooser)
+        } else {
+            Toast.makeText(this, "Tidak dapat membuka kamera", Toast.LENGTH_SHORT).show()
         }
     }
 

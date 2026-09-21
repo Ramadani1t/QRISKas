@@ -20,3 +20,16 @@
 .recap-grand span{color:var(--ink);font-size:14px}
 .recap-grand strong{font-size:24px;color:var(--yellow)}
 
+.cashout-trigger-btn{position:relative;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#241804 0%,#160e02 100%);color:#fbbf24;border:1px solid rgba(251,191,36,0.45);min-height:50px;font-size:14px;font-weight:800;border-radius:16px;cursor:pointer;box-shadow:0 4px 18px rgba(251,191,36,0.12);transition:all .15s ease}
+.cashout-trigger-btn:hover,.cashout-trigger-btn:active{background:#362304;border-color:#fbbf24;box-shadow:0 6px 22px rgba(251,191,36,0.25)}
+.cashout-badge-chip{background:#fbbf24;color:#180f00;font-size:10px;font-weight:900;padding:2px 7px;border-radius:10px;margin-left:4px;letter-spacing:0.04em;text-transform:uppercase}
+.cashout-modal-header{display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.cashout-modal-icon{width:40px;height:40px;display:grid;place-items:center;border-radius:12px;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.35);color:#fbbf24;flex-shrink:0}
+.cashout-gallery-label{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;gap:8px;text-align:center;color:#fbbf24;background:rgba(251,191,36,0.08);border:1px dashed #d97706;border-radius:14px;font-size:13px;font-weight:700;padding:14px;cursor:pointer;transition:background .2s ease,border-color .2s ease}
+.cashout-gallery-label:hover,.cashout-gallery-label:active{background:rgba(251,191,36,0.16);border-color:#fbbf24}
+.cashout-gallery-label input[type="file"]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.cashout-preview-wrap{margin-top:10px;position:relative;border:1px solid var(--line);border-radius:14px;padding:8px;background:#060502;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.cashout-preview-wrap img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.confirm-cashout-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(251,191,36,0.15);border:1px solid #fbbf24;color:#fbbf24;font-size:11px;font-weight:900;letter-spacing:0.06em;padding:5px 12px;border-radius:12px;margin-bottom:8px}
+.confirm-revised-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(192,132,252,0.15);border:1px solid #c084fc;color:#c084fc;font-size:11px;font-weight:900;letter-spacing:0.06em;padding:5px 12px;border-radius:12px;margin-bottom:8px}
+.confirm-surplus-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(56,189,248,0.15);border:1px solid #38bdf8;color:#38bdf8;font-size:11px;font-weight:900;letter-spacing:0.06em;padding:5px 12px;border-radius:12px;margin-bottom:8px}

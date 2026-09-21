@@ -127,6 +127,52 @@
   white-space: nowrap;
 }
 
+.badge-cashout {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%);
+  color: #1a1000;
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 6px;
+  line-height: 1.2;
+  box-shadow: 0 2px 8px rgba(251, 191, 36, 0.35);
+  white-space: nowrap;
+}
+
+.badge-revised {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: linear-gradient(135deg, #c084fc 0%, #9333ea 100%);
+  color: #17072b;
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 6px;
+  line-height: 1.2;
+  box-shadow: 0 2px 8px rgba(192, 132, 252, 0.35);
+  white-space: nowrap;
+}
+
+.history-item.is-cashout {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: linear-gradient(145deg, #1e1302 0%, #130d02 100%);
+  box-shadow: 0 4px 16px rgba(251, 191, 36, 0.12);
+}
+
+.history-item.is-cashout .history-item-amount {
+  color: #fbbf24;
+}
+
+.history-item.is-revised {
+  border-left: 3px solid #c084fc;
+}
+
 .history-item-actions {
   display: flex;
   align-items: center;
