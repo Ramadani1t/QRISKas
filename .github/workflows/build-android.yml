@@ -44,12 +44,10 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: 📦 Prepare APK Artifact
+        if: success()
         run: |
           mkdir -p artifact
-          APK=$(find mobile/android/app/build/outputs/apk/debug -name "*.apk" 2>/dev/null | head -1)
-          if [ -z "$APK" ]; then
-            APK=$(find mobile/android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -1)
-          fi
+          APK=$(find mobile/android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -1)
           if [ -z "$APK" ]; then
             echo "❌ No APK found in build outputs!"
             exit 1
@@ -58,6 +56,7 @@ jobs:
           cp "$APK" "artifact/qriskas-mobile-debug.apk"
 
       - name: ⬆️ Upload APK Artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: qriskas-mobile-apk
