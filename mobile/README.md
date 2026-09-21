@@ -35,8 +35,13 @@ Aplikasi kasir mobile native untuk **QRISKas (Tahunya Krispiya)** yang dioptimal
 - **Mode Surplus**: Catat kelebihan uang kas
 - **Tukar QRIS ke Cash**: Potong laci kasir (tidak masuk omset)
 - **Label Revisi / Susulan**: Tandai transaksi koreksi agar bos bisa verifikasi mutasi bank
+- **In-App Auto-Update (Khusus Mobile)**: Pemeriksaan versi rilis terbaru otomatis dari GitHub Releases tanpa mengganggu operasional kasir (indikator halus di menu Pengaturan dengan kotak verifikasi dan tombol download & install langsung).
 
 ---
+
+## 📌 Panduan Penomoran Versi & Rilis
+Lihat panduan lengkap di: [**`VERSIONING_GUIDE.md`**](../VERSIONING_GUIDE.md)  
+Setiap kali ada fitur baru atau perbaikan, pengembang/AI wajib mengonfirmasi kenaikan versi (`versionCode` & `versionName`) sebelum merilis tag baru.
 
 ## 🛠️ Cara Build (Developer)
 

@@ -166,4 +166,32 @@ class WebAppInterface(private val activity: MainActivity) {
      */
     @JavascriptInterface
     fun isAndroidApp(): Boolean = true
+
+    /**
+     * Ambil versi aplikasi terpasang (misal 1.2.0)
+     */
+    @JavascriptInterface
+    fun getAppVersionName(): String {
+        return UpdateManager.getCurrentVersionName(activity)
+    }
+
+    /**
+     * Pemicu cek pembaruan aplikasi dari menu Pengaturan WebApp.
+     */
+    @JavascriptInterface
+    fun checkAppUpdate() {
+        activity.runOnUiThread {
+            activity.triggerUpdateCheck(isManual = true)
+        }
+    }
+
+    /**
+     * Pemicu unduh dan pasang file APK dari dialog verifikasi di Pengaturan.
+     */
+    @JavascriptInterface
+    fun downloadAndInstallUpdate(apkUrl: String, tagName: String) {
+        activity.runOnUiThread {
+            UpdateManager.downloadAndInstall(activity, apkUrl, tagName)
+        }
+    }
 }

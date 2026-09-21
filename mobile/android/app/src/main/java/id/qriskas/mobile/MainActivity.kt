@@ -229,6 +229,8 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
                 injectAndroidHelperJs()
+                // Cek update di background tanpa mengganggu kasir
+                triggerUpdateCheck(isManual = false)
             }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
@@ -539,6 +541,55 @@ class MainActivity : AppCompatActivity() {
             })();
         """.trimIndent()
         webView.evaluateJavascript(js, null)
+    }
+
+    /**
+     * Cek update APK dari GitHub Releases dan kirim hasilnya ke WebApp via JavaScript.
+     * Tidak menampilkan modal otomatis yang mengganggu proses kasir, melainkan
+     * mengaktifkan indikator/verifikasi pada menu Pengaturan.
+     */
+    fun triggerUpdateCheck(isManual: Boolean) {
+        UpdateManager.checkForUpdate(this) { isAvailable, info ->
+            if (isAvailable && info != null) {
+                val escapedBody = info.body.replace("\\", "\\\\")
+                    .replace("`", "\\`")
+                    .replace("$", "\\$")
+                    .replace("\n", "\\n")
+                    .replace("\r", "")
+                val escapedName = info.releaseName.replace("'", "\\'")
+                val js = """
+                    (function() {
+                        if (window.onAppUpdateDetected) {
+                            window.onAppUpdateDetected({
+                                available: true,
+                                tagName: '${info.tagName}',
+                                versionName: '${info.versionName}',
+                                releaseName: '$escapedName',
+                                apkUrl: '${info.apkUrl ?: ""}',
+                                apkSize: ${info.apkSize},
+                                body: `$escapedBody`,
+                                isManual: $isManual
+                            });
+                        }
+                    })();
+                """.trimIndent()
+                webView.evaluateJavascript(js, null)
+            } else if (isManual) {
+                val currentVer = UpdateManager.getCurrentVersionName(this)
+                val js = """
+                    (function() {
+                        if (window.onAppUpdateDetected) {
+                            window.onAppUpdateDetected({
+                                available: false,
+                                currentVersion: '$currentVer',
+                                isManual: true
+                            });
+                        }
+                    })();
+                """.trimIndent()
+                webView.evaluateJavascript(js, null)
+            }
+        }
     }
 
     /**

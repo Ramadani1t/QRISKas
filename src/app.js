@@ -24,7 +24,9 @@ const ids=[
   "deleteDialog","deleteConfirmInfo","deletePinInput","deletePasswordInput","confirmDeleteBtn",
   "externalShortcut","settingsBtn","settingsDialog","settingDefaultCam","settingNativeCamMode","customPackageFields",
   "settingCustomPackage","settingShortcutEnabled","settingShortcutLabel","settingShortcutUrl","shortcutFields",
-  "settingSurplusEnabled","settingCashoutEnabled","settingRevisionEnabled","settingGroupedEnabled","settingRetentionDays","cleanNowBtn","saveSettingsBtn"
+  "settingSurplusEnabled","settingCashoutEnabled","settingRevisionEnabled","settingGroupedEnabled","settingRetentionDays","cleanNowBtn","saveSettingsBtn",
+  "mobileAppUpdateSection","mobileCurrentVersionBadge","mobileUpdateHelpText","checkMobileUpdateBtn","checkMobileUpdateBtnText",
+  "mobileUpdateVerifyBox","mobileUpdateTargetTag","mobileUpdateSizeInfo","mobileUpdateChangelog","executeMobileUpdateBtn","dismissMobileUpdateBtn"
 ];
 const e=Object.fromEntries(ids.map(id=>[id,$(id)]));
 let stream,imageBlob,amount=0,recapText="",originalTime="",originalDate="",pendingDeleteRecord=null,pendingEditRecord=null;
@@ -162,6 +164,19 @@ async function openSettingsModal(){
       }
     }
   }catch(_){}
+
+  // Khusus Mobile: tampilkan verifikasi pembaruan (di web biasa disembunyikan total)
+  const isMobile = Boolean(window.__isAndroidApp || window.QriskasAndroid || window.AndroidBridge);
+  if(e.mobileAppUpdateSection){
+    e.mobileAppUpdateSection.style.display = isMobile ? "block" : "none";
+    if(isMobile){
+      let ver = "1.2.0";
+      if(window.QriskasAndroid && typeof window.QriskasAndroid.getAppVersionName === "function"){
+        ver = window.QriskasAndroid.getAppVersionName();
+      }
+      if(e.mobileCurrentVersionBadge) e.mobileCurrentVersionBadge.textContent = "v" + ver;
+    }
+  }
 
   if(e.settingsDialog)e.settingsDialog.showModal();
 }
@@ -1963,7 +1978,153 @@ async function syncOfflineQueue() {
 }
 
 window.addEventListener("online", syncOfflineQueue);
-window.addEventListener("qriskas:online", syncOfflineQueue);
+// ==================== IN-APP UPDATE KHUSUS MOBILE ====================
+let pendingMobileUpdateInfo = null;
+
+window.onAppUpdateDetected = function(data) {
+  if (!data) return;
+  if (data.available) {
+    pendingMobileUpdateInfo = data;
+    // Beri indikator titik kuning halus pada ikon pengaturan tanpa mengganggu alur kasir
+    if (e.settingsBtn) e.settingsBtn.classList.add("has-update");
+
+    // Siapkan kotak verifikasi di dalam dialog pengaturan
+    if (e.mobileUpdateVerifyBox) {
+      if (e.mobileUpdateTargetTag) {
+        e.mobileUpdateTargetTag.textContent = `Pembaruan Tersedia: ${data.tagName || data.versionName}`;
+      }
+      if (e.mobileUpdateSizeInfo) {
+        const sizeKb = data.apkSize ? Math.round(data.apkSize / 1024) + " KB" : "~850 KB";
+        e.mobileUpdateSizeInfo.textContent = `Ukuran APK: ${sizeKb}`;
+      }
+      if (e.mobileUpdateChangelog) {
+        e.mobileUpdateChangelog.textContent = data.body || "Pembaruan versi terbaru dengan peningkatan stabilitas dan fitur.";
+      }
+      e.mobileUpdateVerifyBox.style.display = "block";
+    }
+
+    if (e.mobileUpdateHelpText) {
+      e.mobileUpdateHelpText.textContent = `Versi baru (${data.tagName}) telah tersedia. Buka verifikasi untuk update.`;
+      e.mobileUpdateHelpText.style.color = "var(--yellow)";
+    }
+
+    if (data.isManual) {
+      toast("Pembaruan versi baru tersedia!");
+    }
+  } else if (data.isManual) {
+    toast(`Aplikasi sudah versi terbaru (${data.currentVersion || "v1.2.0"})`);
+    if (e.mobileUpdateHelpText) {
+      e.mobileUpdateHelpText.textContent = "Aplikasi Anda sudah menggunakan versi terbaru.";
+      e.mobileUpdateHelpText.style.color = "var(--muted)";
+    }
+    if (e.mobileUpdateVerifyBox) {
+      e.mobileUpdateVerifyBox.style.display = "none";
+    }
+    if (e.settingsBtn) {
+      e.settingsBtn.classList.remove("has-update");
+    }
+  }
+};
+
+function semverIsNewer(latest, current) {
+  try {
+    const l = latest.replace(/^v/, "").split(".").map(n => parseInt(n, 10) || 0);
+    const c = current.replace(/^v/, "").split(".").map(n => parseInt(n, 10) || 0);
+    const len = Math.max(l.length, c.length);
+    for (let i = 0; i < len; i++) {
+      const lv = l[i] || 0;
+      const cv = c[i] || 0;
+      if (lv > cv) return true;
+      if (lv < cv) return false;
+    }
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function checkGitHubReleaseFallback() {
+  if (e.checkMobileUpdateBtnText) e.checkMobileUpdateBtnText.textContent = "Memeriksa...";
+  if (e.checkMobileUpdateBtn) e.checkMobileUpdateBtn.disabled = true;
+  try {
+    const res = await fetch("https://api.github.com/repos/Ramadani1t/QRISKas/releases/latest");
+    if (res.ok) {
+      const data = await res.json();
+      const currentVer = (window.QriskasAndroid?.getAppVersionName ? window.QriskasAndroid.getAppVersionName() : "1.2.0").replace(/^v/, "");
+      const latestVer = (data.tag_name || "").replace(/^v/, "");
+      let apkUrl = "";
+      let apkSize = 0;
+      if (Array.isArray(data.assets)) {
+        const apkAsset = data.assets.find(a => (a.name || "").endsWith(".apk"));
+        if (apkAsset) {
+          apkUrl = apkAsset.browser_download_url;
+          apkSize = apkAsset.size;
+        }
+      }
+      const isNewer = semverIsNewer(latestVer, currentVer);
+      window.onAppUpdateDetected({
+        available: isNewer,
+        tagName: data.tag_name,
+        versionName: latestVer,
+        releaseName: data.name,
+        apkUrl: apkUrl,
+        apkSize: apkSize,
+        body: data.body,
+        isManual: true,
+        currentVersion: currentVer
+      });
+    } else {
+      toast("Gagal memeriksa pembaruan");
+    }
+  } catch (_) {
+    toast("Gagal terhubung ke server pembaruan");
+  } finally {
+    if (e.checkMobileUpdateBtnText) e.checkMobileUpdateBtnText.textContent = "Periksa Pembaruan Versi";
+    if (e.checkMobileUpdateBtn) e.checkMobileUpdateBtn.disabled = false;
+  }
+}
+
+if (e.checkMobileUpdateBtn) {
+  e.checkMobileUpdateBtn.addEventListener("click", () => {
+    if (window.QriskasAndroid && typeof window.QriskasAndroid.checkAppUpdate === "function") {
+      if (e.checkMobileUpdateBtnText) e.checkMobileUpdateBtnText.textContent = "Memeriksa...";
+      e.checkMobileUpdateBtn.disabled = true;
+      window.QriskasAndroid.checkAppUpdate();
+      setTimeout(() => {
+        if (e.checkMobileUpdateBtnText) e.checkMobileUpdateBtnText.textContent = "Periksa Pembaruan Versi";
+        if (e.checkMobileUpdateBtn) e.checkMobileUpdateBtn.disabled = false;
+      }, 2500);
+    } else {
+      checkGitHubReleaseFallback();
+    }
+  });
+}
+
+if (e.executeMobileUpdateBtn) {
+  e.executeMobileUpdateBtn.addEventListener("click", () => {
+    if (!pendingMobileUpdateInfo || !pendingMobileUpdateInfo.apkUrl) {
+      toast("Link unduhan APK belum tersedia.");
+      return;
+    }
+    toast("Mengunduh update APK...");
+    if (window.QriskasAndroid && typeof window.QriskasAndroid.downloadAndInstallUpdate === "function") {
+      window.QriskasAndroid.downloadAndInstallUpdate(
+        pendingMobileUpdateInfo.apkUrl,
+        pendingMobileUpdateInfo.tagName || "v1.2.0"
+      );
+    } else if (window.QriskasAndroid && typeof window.QriskasAndroid.openExternalUrl === "function") {
+      window.QriskasAndroid.openExternalUrl(pendingMobileUpdateInfo.apkUrl);
+    } else {
+      window.open(pendingMobileUpdateInfo.apkUrl, "_blank");
+    }
+  });
+}
+
+if (e.dismissMobileUpdateBtn) {
+  e.dismissMobileUpdateBtn.addEventListener("click", () => {
+    if (e.mobileUpdateVerifyBox) e.mobileUpdateVerifyBox.style.display = "none";
+  });
+}
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {

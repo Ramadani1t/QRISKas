@@ -47,3 +47,6 @@
 .confirm-revised-toggle{display:inline-flex;align-items:center;gap:6px;background:#151020;border:1px dashed #7e22ce;color:#c084fc;font-size:11.5px;font-weight:800;padding:6px 14px;border-radius:12px;margin-bottom:8px;cursor:pointer;transition:all .15s ease}
 .confirm-revised-toggle:hover,.confirm-revised-toggle:active{background:#231738;border-color:#c084fc}
 .confirm-revised-toggle.active{background:rgba(192,132,252,0.22);border-style:solid;border-color:#c084fc;box-shadow:0 0 12px rgba(192,132,252,0.3)}
+
+#settingsBtn{position:relative}
+#settingsBtn.has-update::after{content:'';position:absolute;top:5px;right:5px;width:7px;height:7px;background:#ffd000;border-radius:50%;box-shadow:0 0 8px #ffd000}
