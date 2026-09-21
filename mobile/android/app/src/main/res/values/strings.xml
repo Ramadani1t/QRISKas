@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">QRISKAS Mobile</string>
+    <string name="camera_permission_required">Izin kamera diperlukan untuk menggunakan fitur scan QRIS.</string>
+    <string name="permission_denied">Izin ditolak. Buka Pengaturan untuk mengaktifkan izin kamera.</string>
+</resources>

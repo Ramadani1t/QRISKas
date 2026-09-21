@@ -1,0 +1,104 @@
+name: 🤖 Build QRISKAS Mobile APK
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'mobile/android/**'
+      - '.github/workflows/build-android.yml'
+  pull_request:
+    paths:
+      - 'mobile/android/**'
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: false
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+
+jobs:
+  build-apk:
+    name: Build APK (Android 13)
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout repo ──────────────────────────────────────────────────
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Setup JDK 17 ───────────────────────────────────────────────────
+      - name: ☕ Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      # ── 3. Setup Android SDK ──────────────────────────────────────────────
+      - name: 📱 Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # ── 4. Accept SDK licenses ─────────────────────────────────────────────
+      - name: ✅ Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      # ── 5. Cache Gradle ───────────────────────────────────────────────────
+      - name: 🗃️ Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('mobile/android/**/*.gradle*', 'mobile/android/**/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # ── 6. Make gradlew executable ────────────────────────────────────────
+      - name: 🔧 Grant execute permission to gradlew
+        run: chmod +x mobile/android/gradlew
+
+      # ── 7. Build Debug APK ────────────────────────────────────────────────
+      - name: 🔨 Build Debug APK
+        working-directory: mobile/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2"
+
+      # ── 8. Rename APK ─────────────────────────────────────────────────────
+      - name: 📦 Rename APK artifact
+        run: |
+          mkdir -p artifact
+          APK_PATH=$(find mobile/android/app/build/outputs/apk/debug -name "*.apk" | head -1)
+          echo "Found APK: $APK_PATH"
+          cp "$APK_PATH" "artifact/qriskas-mobile-debug-$(date +%Y%m%d-%H%M).apk"
+          ls -la artifact/
+
+      # ── 9. Upload artifact ────────────────────────────────────────────────
+      - name: ⬆️ Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qriskas-mobile-apk
+          path: artifact/*.apk
+          retention-days: 30
+
+      # ── 10. Build summary ─────────────────────────────────────────────────
+      - name: 📊 Build summary
+        if: always()
+        run: |
+          echo "## 📱 QRISKAS Mobile Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Detail |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| App Name | QRISKAS Mobile |" >> $GITHUB_STEP_SUMMARY
+          echo "| Package | id.qriskas.mobile |" >> $GITHUB_STEP_SUMMARY
+          echo "| Target SDK | Android 13 (API 33) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Min SDK | Android 8.0 (API 26) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Type | Debug |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> ✅ APK tersedia di tab **Artifacts** — berlaku 30 hari" >> $GITHUB_STEP_SUMMARY

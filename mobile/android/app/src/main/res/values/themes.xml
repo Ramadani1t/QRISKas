@@ -1,0 +1,14 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme -->
+    <style name="Theme.QriskasMobile" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">#0a0903</item>
+        <item name="android:statusBarColor">#0a0903</item>
+        <item name="android:navigationBarColor">#0a0903</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+    </style>
+
+    <!-- Splash theme (no content yet) -->
+    <style name="Theme.QriskasMobile.Splash" parent="Theme.QriskasMobile">
+        <item name="android:windowBackground">@drawable/splash</item>
+    </style>
+</resources>

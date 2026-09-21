@@ -17,3 +17,17 @@ eng.traineddata
 .DS_Store
 Thumbs.db
 *.log
+
+# Android Build Artifacts
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/local.properties
+mobile/android/*.keystore
+mobile/android/*.jks
+artifact/
+
+# Android Studio / IntelliJ
+mobile/android/.idea/
+mobile/android/**/*.iml
+mobile/android/**/.DS_Store
