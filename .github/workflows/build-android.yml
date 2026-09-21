@@ -39,26 +39,30 @@ jobs:
       - name: 🔧 Make gradlew executable
         run: chmod +x mobile/android/gradlew
 
-      - name: 🔨 Build Debug APK
+      - name: 🔨 Build Optimized APK
         working-directory: mobile/android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: 📦 Prepare APK Artifact
         if: success()
         run: |
           mkdir -p artifact
-          APK=$(find mobile/android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -1)
+          APK=$(find mobile/android/app/build/outputs/apk/release -name "*.apk" 2>/dev/null | head -1)
+          if [ -z "$APK" ]; then
+            APK=$(find mobile/android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -1)
+          fi
           if [ -z "$APK" ]; then
             echo "❌ No APK found in build outputs!"
             exit 1
           fi
-          echo "Found APK at: $APK"
-          cp "$APK" "artifact/qriskas-mobile-debug.apk"
+          SIZE=$(du -h "$APK" | cut -f1)
+          echo "Found APK at: $APK (Size: $SIZE)"
+          cp "$APK" "artifact/qriskas-mobile.apk"
 
       - name: ⬆️ Upload APK Artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: qriskas-mobile-apk
-          path: artifact/qriskas-mobile-debug.apk
+          path: artifact/qriskas-mobile.apk
           retention-days: 30
