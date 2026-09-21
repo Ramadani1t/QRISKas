@@ -1,4 +1,4 @@
-const CACHE_NAME = 'qriskas-v1';
+const CACHE_NAME = 'qriskas-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/style.css',
@@ -29,18 +29,16 @@ self.addEventListener('fetch', event => {
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/login') || event.request.method !== 'GET') {
     return;
   }
+  // Network-first strategy: ambil versi terbaru dari server jika online, fallback ke cache jika offline
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) {
-        // Revalidate cache in background if online
-        fetch(event.request).then(resp => {
-          if (resp && resp.status === 200) {
-            caches.open(CACHE_NAME).then(cache => cache.put(event.request, resp));
-          }
-        }).catch(() => {});
-        return cached;
+    fetch(event.request).then(response => {
+      if (response && response.status === 200) {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
       }
-      return fetch(event.request).catch(() => caches.match('/'));
+      return response;
+    }).catch(() => {
+      return caches.match(event.request).then(cached => cached || caches.match('/'));
     })
   );
 });

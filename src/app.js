@@ -1,7 +1,7 @@
 const $=id=>document.getElementById(id);
 const ids=[
   "camera","cameraEmpty","startCamera","toggleCamMode","capture","nativeCamBtn","nativeCamInput","fileInput",
-  "openCashoutBtn","openSurplusBtn","confirmSurplusBadge","confirmCashoutBadge","confirmRevisedBadge","confirmNoteDisplay",
+  "openCashoutBtn","openSurplusBtn","openRevisedBtn","confirmSurplusBadge","confirmCashoutBadge","confirmRevisedBadge","toggleConfirmRevisedBtn","toggleConfirmRevisedText","confirmNoteDisplay",
   "result","preview","amount","save","manual","manualDialog","manualAmount","manualDate","manualTime",
   "dateTimeFieldGroup","manualSurplusGroup","manualIsSurplus","manualNoteWrap","manualNote",
   "manualCashoutGroup","manualIsCashout","manualCashoutNoteWrap","manualCashoutNote",
@@ -13,6 +13,9 @@ const ids=[
   "cashoutDialog","cashoutAmount","cashoutNote","cashoutGalleryBtn","cashoutGalleryText",
   "cashoutFileInput","cashoutPreviewWrap","cashoutPreviewImg","removeCashoutPhoto","cashoutAutoProofNote",
   "cashoutDate","cashoutTime","cashoutIsRevised","saveCashoutBtn",
+  "revisedDialog","revisedAmount","revisedNote","revisedGalleryBtn","revisedGalleryText",
+  "revisedFileInput","revisedPreviewWrap","revisedPreviewImg","removeRevisedPhoto","revisedAutoProofNote",
+  "revisedDate","revisedTime","saveRevisedBtn",
   "rescan","canvas","success","shareText","share","copy","again","toast",
   "scanTab","historyTab","scanPage","historyPage","historyDate","historyLoading",
   "historyEmpty","historyList","recapBox","recapSalesRow","recapSalesTotal","recapSurplusRow","recapSurplusTotal","recapCashoutRow","recapCashoutTotal","recapRevisedRow","recapRevisedCount","recapDivider","historyTotal","shareRecap","copyRecap",
@@ -30,7 +33,7 @@ let currentFacingMode=localStorage.getItem("preferredFacingMode")||"environment"
 let allVideoDevices=[];
 let currentDeviceIndex=0;
 let currentRole="kasir";
-let isSurplusMode=false,isCashoutMode=false,isRevisedMode=false,currentNote="",surplusSelectedBlob=null,cashoutSelectedBlob=null;
+let isSurplusMode=false,isCashoutMode=false,isRevisedMode=false,currentNote="",surplusSelectedBlob=null,cashoutSelectedBlob=null,revisedSelectedBlob=null;
 
 const rupiah=n=>new Intl.NumberFormat("id-ID").format(n);
 const escapeHtml=s=>String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
@@ -89,6 +92,7 @@ function applySettingsUI(s){
     if(e.externalShortcut) e.externalShortcut.style.display="none";
     if(e.openSurplusBtn) e.openSurplusBtn.style.display="none";
     if(e.openCashoutBtn) e.openCashoutBtn.style.display="none";
+    if(e.openRevisedBtn) e.openRevisedBtn.style.display="none";
     if(e.manualSurplusGroup) e.manualSurplusGroup.style.display="none";
     if(e.manualCashoutGroup) e.manualCashoutGroup.style.display="none";
     if(e.manualRevisedGroup) e.manualRevisedGroup.style.display="none";
@@ -109,6 +113,9 @@ function applySettingsUI(s){
     e.manualCashoutGroup.style.display=s.cashoutEnabled?"block":"none";
   }
 
+  if(e.openRevisedBtn){
+    e.openRevisedBtn.style.display=s.revisionEnabled?"flex":"none";
+  }
   if(e.manualRevisedGroup){
     e.manualRevisedGroup.style.display=s.revisionEnabled?"block":"none";
   }
@@ -435,6 +442,16 @@ function openManual(mode="default"){
   setTimeout(()=>e.manualAmount.focus(),100);
 }
 
+function updateRevisedToggleUI(){
+  if(e.confirmRevisedBadge)e.confirmRevisedBadge.classList.toggle("hidden",!isRevisedMode);
+  if(e.toggleConfirmRevisedBtn){
+    e.toggleConfirmRevisedBtn.classList.toggle("active",Boolean(isRevisedMode));
+    if(e.toggleConfirmRevisedText){
+      e.toggleConfirmRevisedText.textContent=isRevisedMode?"✓ Berlabel Revisi":"+ Beri Label Revisi";
+    }
+  }
+}
+
 async function useSource(s, source="camera"){
   inputSource=source;
   const w=s.videoWidth||s.naturalWidth,h=s.videoHeight||s.naturalHeight,max=1100,z=Math.min(1,max/w);
@@ -447,7 +464,7 @@ async function useSource(s, source="camera"){
   // Update badge display berdasarkan state aktif
   if(e.confirmSurplusBadge)e.confirmSurplusBadge.classList.toggle("hidden",!isSurplusMode);
   if(e.confirmCashoutBadge)e.confirmCashoutBadge.classList.toggle("hidden",!isCashoutMode);
-  if(e.confirmRevisedBadge)e.confirmRevisedBadge.classList.toggle("hidden",!isRevisedMode);
+  updateRevisedToggleUI();
   if(e.confirmNoteDisplay){
     if((isSurplusMode||isCashoutMode) && currentNote){
       e.confirmNoteDisplay.textContent=`Catatan: ${currentNote}`;
@@ -555,10 +572,10 @@ function reset(){
   e.success.classList.add("hidden");
   imageBlob=null;amount=0;
   isSurplusMode=false;isCashoutMode=false;isRevisedMode=false;currentNote="";
-  surplusSelectedBlob=null;cashoutSelectedBlob=null;
+  surplusSelectedBlob=null;cashoutSelectedBlob=null;revisedSelectedBlob=null;
   if(e.confirmSurplusBadge)e.confirmSurplusBadge.classList.add("hidden");
   if(e.confirmCashoutBadge)e.confirmCashoutBadge.classList.add("hidden");
-  if(e.confirmRevisedBadge)e.confirmRevisedBadge.classList.add("hidden");
+  updateRevisedToggleUI();
   if(e.confirmNoteDisplay)e.confirmNoteDisplay.classList.add("hidden");
   if(e.manualIsSurplus)e.manualIsSurplus.checked=false;
   if(e.manualNoteWrap)e.manualNoteWrap.style.display="none";
@@ -971,6 +988,206 @@ async function saveCashout(ev){
     if(e.saveCashoutBtn){
       e.saveCashoutBtn.disabled=false;
       e.saveCashoutBtn.textContent="Simpan Tukar Cash";
+    }
+  }
+}
+
+async function generateRevisedProofImage(nominal,note,dateStr,timeStr){
+  const c=document.createElement("canvas");
+  c.width=800;c.height=600;
+  const ctx=c.getContext("2d");
+  const grad=ctx.createLinearGradient(0,0,800,600);
+  grad.addColorStop(0,"#1a0f28");
+  grad.addColorStop(1,"#090510");
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,800,600);
+
+  ctx.strokeStyle="#c084fc";
+  ctx.lineWidth=6;
+  ctx.strokeRect(16,16,768,568);
+
+  ctx.strokeStyle="#4c1d95";
+  ctx.lineWidth=2;
+  ctx.strokeRect(26,26,748,548);
+
+  ctx.fillStyle="#ffd000";
+  ctx.font="bold 22px system-ui,sans-serif";
+  ctx.textAlign="center";
+  ctx.fillText("TAHUNYA KRISPIYA • QRIS KAS",400,75);
+
+  ctx.fillStyle="rgba(192,132,252,0.18)";
+  ctx.fillRect(180,95,440,36);
+  ctx.strokeStyle="#c084fc";
+  ctx.lineWidth=1.5;
+  ctx.strokeRect(180,95,440,36);
+
+  ctx.fillStyle="#c084fc";
+  ctx.font="bold 14px system-ui,sans-serif";
+  ctx.fillText("BUKTI TRANSAKSI SUSULAN / REVISI",400,119);
+
+  ctx.fillStyle="#a89f82";
+  ctx.font="14px system-ui,sans-serif";
+  ctx.fillText("NOMINAL TRANSAKSI TERCATAT",400,180);
+
+  ctx.fillStyle="#ffffff";
+  ctx.font="900 58px system-ui,sans-serif";
+  ctx.fillText(`Rp${rupiah(nominal)}`,400,245);
+
+  ctx.fillStyle="#120a1c";
+  ctx.fillRect(70,285,660,200);
+  ctx.strokeStyle="#4c1d95";
+  ctx.lineWidth=1.5;
+  ctx.strokeRect(70,285,660,200);
+
+  ctx.textAlign="left";
+  ctx.fillStyle="#a89f82";
+  ctx.font="bold 14px system-ui,sans-serif";
+  ctx.fillText("WAKTU TRANSAKSI SEBENARNYA",100,325);
+  ctx.fillStyle="#fffef5";
+  ctx.font="16px system-ui,sans-serif";
+  ctx.fillText(`${dateStr} • ${timeStr} WIB`,100,350);
+
+  ctx.fillStyle="#a89f82";
+  ctx.font="bold 14px system-ui,sans-serif";
+  ctx.fillText("KETERANGAN / ALASAN REVISI",100,395);
+  ctx.fillStyle="#c084fc";
+  ctx.font="italic 16px system-ui,sans-serif";
+  const noteText=note||"Transaksi susulan / koreksi catatan kasir";
+  ctx.fillText(noteText.length>55?noteText.slice(0,52)+"...":noteText,100,422);
+
+  ctx.textAlign="center";
+  ctx.fillStyle="#a89f82";
+  ctx.font="12px system-ui,sans-serif";
+  ctx.fillText("Tercatat Resmi Sebagai Transaksi Susulan • Siap Diverifikasi dengan Mutasi Bank",400,535);
+
+  return await canvasBlob(c,0.85);
+}
+
+function openRevisedModal(){
+  if(e.revisedAmount)e.revisedAmount.value="";
+  if(e.revisedNote)e.revisedNote.value="";
+  if(e.revisedDate)e.revisedDate.value=localDate();
+  if(e.revisedTime)e.revisedTime.value=currentJakartaTime();
+  revisedSelectedBlob=null;
+  if(e.revisedPreviewWrap)e.revisedPreviewWrap.classList.add("hidden");
+  if(e.revisedPreviewImg)e.revisedPreviewImg.src="";
+  if(e.revisedGalleryText)e.revisedGalleryText.textContent="Pilih Foto Bukti dari Galeri";
+  if(e.revisedFileInput)e.revisedFileInput.value="";
+  if(e.revisedDialog){
+    e.revisedDialog.showModal();
+    setTimeout(()=>e.revisedAmount?.focus(),100);
+  }
+}
+
+async function saveRevised(ev){
+  ev.preventDefault();
+  const rAmount=Number(e.revisedAmount.value.replace(/\D/g,""));
+  if(!rAmount)return toast("Masukkan nominal transaksi yang benar");
+
+  const rNote=(e.revisedNote.value||"").trim();
+  const rDate=e.revisedDate.value||localDate();
+  const rTime=e.revisedTime.value||currentJakartaTime();
+
+  if(e.saveRevisedBtn){
+    e.saveRevisedBtn.disabled=true;
+    e.saveRevisedBtn.textContent="Menyimpan…";
+  }
+
+  // Jika sedang offline
+  if(!navigator.onLine){
+    let finalBlob=revisedSelectedBlob;
+    if(!finalBlob){
+      finalBlob=await generateRevisedProofImage(rAmount,rNote,rDate,rTime);
+    }
+    await queueOfflineReceipt({
+      amount: String(rAmount),
+      isSurplus: false,
+      isCashout: false,
+      isRevised: true,
+      note: rNote,
+      customDate: rDate,
+      customTime: rTime,
+      imageBlob: finalBlob
+    });
+    const line=formatReceiptLine(rTime,rAmount,false,false,true,rNote);
+    e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
+    if(e.revisedDialog)e.revisedDialog.close();
+    e.result.classList.add("hidden");
+    e.success.classList.remove("hidden");
+    e.success.scrollIntoView({behavior:"smooth"});
+    toast("Transaksi revisi tersimpan di antrean offline!");
+    if(e.saveRevisedBtn){
+      e.saveRevisedBtn.disabled=false;
+      e.saveRevisedBtn.textContent="Simpan Transaksi Revisi";
+    }
+    return;
+  }
+
+  try{
+    let finalBlob=revisedSelectedBlob;
+    if(!finalBlob){
+      finalBlob=await generateRevisedProofImage(rAmount,rNote,rDate,rTime);
+    }
+
+    const fd=new FormData();
+    fd.append("image",finalBlob,"bukti-revisi.jpg");
+    fd.append("amount",String(rAmount));
+    fd.append("customDate",rDate);
+    fd.append("customTime",rTime);
+    fd.append("isRevised","true");
+    if(rNote)fd.append("note",rNote);
+
+    const response=await fetch("/api/receipts",{method:"POST",body:fd});
+    const data=await response.json();
+    if(!response.ok){
+      throw new Error(data.error);
+    }
+
+    const time=new Intl.DateTimeFormat("en-GB",{
+      timeZone:"Asia/Jakarta",
+      hour:"2-digit",
+      minute:"2-digit",
+      hourCycle:"h23"
+    }).format(new Date(data.savedAt));
+
+    const line=formatReceiptLine(time,data.amount,false,false,true,data.note);
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    if(e.revisedDialog)e.revisedDialog.close();
+
+    e.result.classList.add("hidden");
+    e.success.classList.remove("hidden");
+    e.success.scrollIntoView({behavior:"smooth"});
+    toast("Transaksi revisi berhasil dicatat!");
+  }catch(err){
+    if(!navigator.onLine || err.message?.includes("fetch") || err.message?.includes("NetworkError")){
+      let finalBlob=revisedSelectedBlob;
+      if(!finalBlob){
+        finalBlob=await generateRevisedProofImage(rAmount,rNote,rDate,rTime);
+      }
+      await queueOfflineReceipt({
+        amount: String(rAmount),
+        isSurplus: false,
+        isCashout: false,
+        isRevised: true,
+        note: rNote,
+        customDate: rDate,
+        customTime: rTime,
+        imageBlob: finalBlob
+      });
+      const line=formatReceiptLine(rTime,rAmount,false,false,true,rNote);
+      e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
+      if(e.revisedDialog)e.revisedDialog.close();
+      e.result.classList.add("hidden");
+      e.success.classList.remove("hidden");
+      e.success.scrollIntoView({behavior:"smooth"});
+      toast("Transaksi revisi tersimpan di antrean offline!");
+    } else {
+      toast(err.message||"Gagal menyimpan transaksi revisi");
+    }
+  }finally{
+    if(e.saveRevisedBtn){
+      e.saveRevisedBtn.disabled=false;
+      e.saveRevisedBtn.textContent="Simpan Transaksi Revisi";
     }
   }
 }
@@ -1584,6 +1801,55 @@ if(e.removeCashoutPhoto){
     if(e.cashoutPreviewImg)e.cashoutPreviewImg.src="";
     if(e.cashoutGalleryText)e.cashoutGalleryText.textContent="Pilih Foto Bukti dari Galeri";
     if(e.cashoutFileInput)e.cashoutFileInput.value="";
+  };
+}
+
+if(e.openRevisedBtn) e.openRevisedBtn.onclick=openRevisedModal;
+if(e.saveRevisedBtn) e.saveRevisedBtn.onclick=saveRevised;
+
+if(e.revisedAmount){
+  e.revisedAmount.oninput=()=>{
+    const d=e.revisedAmount.value.replace(/\D/g,"");
+    e.revisedAmount.value=d?rupiah(Number(d)):"";
+  };
+}
+
+if(e.revisedFileInput){
+  e.revisedFileInput.onchange=()=>{
+    const f=e.revisedFileInput.files[0];
+    if(!f)return;
+    const img=new Image();
+    img.onload=async()=>{
+      const w=img.naturalWidth,h=img.naturalHeight,max=1100,z=Math.min(1,max/w);
+      e.canvas.width=Math.round(w*z);
+      e.canvas.height=Math.round(h*z);
+      e.canvas.getContext("2d").drawImage(img,0,0,e.canvas.width,e.canvas.height);
+      revisedSelectedBlob=await canvasBlob(e.canvas);
+      if(e.revisedPreviewImg)e.revisedPreviewImg.src=URL.createObjectURL(revisedSelectedBlob);
+      if(e.revisedPreviewWrap)e.revisedPreviewWrap.classList.remove("hidden");
+      if(e.revisedGalleryText)e.revisedGalleryText.textContent="Ganti Foto Bukti Galeri";
+      URL.revokeObjectURL(img.src);
+    };
+    img.src=URL.createObjectURL(f);
+  };
+}
+
+if(e.removeRevisedPhoto){
+  e.removeRevisedPhoto.onclick=()=>{
+    revisedSelectedBlob=null;
+    if(e.revisedPreviewWrap)e.revisedPreviewWrap.classList.add("hidden");
+    if(e.revisedPreviewImg)e.revisedPreviewImg.src="";
+    if(e.revisedGalleryText)e.revisedGalleryText.textContent="Pilih Foto Bukti dari Galeri";
+    if(e.revisedFileInput)e.revisedFileInput.value="";
+  };
+}
+
+if(e.toggleConfirmRevisedBtn){
+  e.toggleConfirmRevisedBtn.onclick=()=>{
+    isRevisedMode=!isRevisedMode;
+    if(e.manualIsRevised) e.manualIsRevised.checked=isRevisedMode;
+    updateRevisedToggleUI();
+    toast(isRevisedMode?"Label Revisi diaktifkan":"Label Revisi dinonaktifkan");
   };
 }
 
