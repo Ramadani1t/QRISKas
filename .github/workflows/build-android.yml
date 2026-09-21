@@ -11,15 +11,6 @@ on:
     paths:
       - 'mobile/android/**'
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: 'Build type'
-        required: false
-        default: 'debug'
-        type: choice
-        options:
-          - debug
-          - release
 
 jobs:
   build-apk:
@@ -39,15 +30,7 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      # ── 3. Setup Android SDK ──────────────────────────────────────────────
-      - name: 📱 Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      # ── 4. Accept SDK licenses ─────────────────────────────────────────────
-      - name: ✅ Accept Android SDK licenses
-        run: yes | sdkmanager --licenses || true
-
-      # ── 5. Cache Gradle ───────────────────────────────────────────────────
+      # ── 3. Cache Gradle ───────────────────────────────────────────────────
       - name: 🗃️ Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -58,27 +41,55 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      # ── 6. Make gradlew executable ────────────────────────────────────────
+      # ── 4. Setup Android SDK via sdkmanager ──────────────────────────────
+      - name: 📱 Setup Android SDK components
+        run: |
+          # ANDROID_SDK_ROOT sudah tersedia di ubuntu-latest runner
+          echo "Android SDK Root: $ANDROID_SDK_ROOT"
+          
+          # Accept licenses
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          
+          # Install required SDK components
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            "platforms;android-33" \
+            "build-tools;33.0.2" \
+            "platform-tools" \
+            > /dev/null 2>&1
+
+      # ── 5. Make gradlew executable ────────────────────────────────────────
       - name: 🔧 Grant execute permission to gradlew
         run: chmod +x mobile/android/gradlew
 
-      # ── 7. Build Debug APK ────────────────────────────────────────────────
+      # ── 6. Build Debug APK ────────────────────────────────────────────────
       - name: 🔨 Build Debug APK
         working-directory: mobile/android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: |
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            --info \
+            -Pandroid.sdk.dir=$ANDROID_SDK_ROOT
         env:
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2"
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2 -Xmx2048m"
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
 
-      # ── 8. Rename APK ─────────────────────────────────────────────────────
-      - name: 📦 Rename APK artifact
+      # ── 7. Find & rename APK ──────────────────────────────────────────────
+      - name: 📦 Prepare APK artifact
         run: |
           mkdir -p artifact
-          APK_PATH=$(find mobile/android/app/build/outputs/apk/debug -name "*.apk" | head -1)
-          echo "Found APK: $APK_PATH"
-          cp "$APK_PATH" "artifact/qriskas-mobile-debug-$(date +%Y%m%d-%H%M).apk"
-          ls -la artifact/
+          APK_PATH=$(find mobile/android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -1)
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ APK not found!"
+            find mobile/android/app/build/ -type f 2>/dev/null || echo "No build output"
+            exit 1
+          fi
+          echo "✅ Found APK: $APK_PATH"
+          TIMESTAMP=$(date +%Y%m%d-%H%M)
+          cp "$APK_PATH" "artifact/qriskas-mobile-debug-${TIMESTAMP}.apk"
+          ls -lh artifact/
 
-      # ── 9. Upload artifact ────────────────────────────────────────────────
+      # ── 8. Upload artifact ────────────────────────────────────────────────
       - name: ⬆️ Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -86,7 +97,7 @@ jobs:
           path: artifact/*.apk
           retention-days: 30
 
-      # ── 10. Build summary ─────────────────────────────────────────────────
+      # ── 9. Build summary ─────────────────────────────────────────────────
       - name: 📊 Build summary
         if: always()
         run: |
@@ -101,4 +112,8 @@ jobs:
           echo "| Build Type | Debug |" >> $GITHUB_STEP_SUMMARY
           echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> ✅ APK tersedia di tab **Artifacts** — berlaku 30 hari" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "> ✅ APK tersedia di tab **Artifacts** — berlaku 30 hari" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "> ❌ Build gagal. Cek logs untuk detail." >> $GITHUB_STEP_SUMMARY
+          fi
