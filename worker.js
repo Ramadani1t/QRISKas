@@ -179,7 +179,7 @@ export default {
       if (role !== "admin") return json({ error: "Akses ditolak." }, 403);
       try {
         if (!env.DELETE_PIN || request.headers.get("x-delete-pin") !== env.DELETE_PIN) return json({ error: "PIN salah." }, 401);
-        const { recordKey, newAmount, newTime } = await request.json();
+        const { recordKey, newAmount, newDate, newTime, newNote, newIsSurplus } = await request.json();
         if (typeof recordKey !== "string") return json({ error: "Record key tidak valid." }, 400);
         const stored = await env.RECEIPTS.get(recordKey);
         if (!stored) return json({ error: "Transaksi tidak ditemukan." }, 404);
@@ -189,21 +189,75 @@ export default {
           if (!sa) return json({ error: "Nominal tidak valid." }, 400);
           record.amount = sa;
         }
+
+        let datePart = record.savedAt ? record.savedAt.split("T")[0] : "";
+        let timePart = record.savedAt && record.savedAt.includes("T") ? record.savedAt.split("T")[1].slice(0, 8) : "00:00:00";
+        let [hh, mm, ss] = timePart.split(":");
+        if (!hh) hh = "00";
+        if (!mm) mm = "00";
+        if (!ss) ss = "00";
+
+        if (newDate) {
+          const dMatch = String(newDate).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          if (dMatch) {
+            datePart = `${dMatch[1]}-${dMatch[2]}-${dMatch[3]}`;
+          } else {
+            return json({ error: "Format tanggal tidak valid (gunakan YYYY-MM-DD)." }, 400);
+          }
+        }
+
         if (newTime) {
           const sanitized = String(newTime).trim().replace(".", ":");
           const match = sanitized.match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
           if (match) {
-            const datePart = record.savedAt.split("T")[0];
-            const hh = match[1].padStart(2, "0");
-            const mm = match[2].padStart(2, "0");
-            const ss = (match[3] || "00").padStart(2, "0");
-            record.savedAt = `${datePart}T${hh}:${mm}:${ss}+07:00`;
+            hh = match[1].padStart(2, "0");
+            mm = match[2].padStart(2, "0");
+            ss = (match[3] || ss || "00").padStart(2, "0");
           } else {
             return json({ error: "Format jam tidak valid (gunakan HH:mm)." }, 400);
           }
         }
-        await env.RECEIPTS.put(recordKey, JSON.stringify(record), { httpMetadata: { contentType: "application/json" } });
-        return json({ updated: true, record });
+
+        if (datePart) {
+          record.savedAt = `${datePart}T${hh}:${mm}:${ss}+07:00`;
+        }
+
+        if (newNote !== undefined) {
+          record.note = String(newNote).trim().slice(0, 250);
+        }
+        if (newIsSurplus !== undefined) {
+          record.isSurplus = Boolean(newIsSurplus);
+        }
+
+        const [targetYear, targetMonth, targetDay] = datePart.split("-");
+        const expectedPrefix = `records/${targetYear}/${targetMonth}/${targetDay}/`;
+        let targetRecordKey = recordKey;
+
+        if (!recordKey.startsWith(expectedPrefix)) {
+          const filename = recordKey.split("/").pop();
+          targetRecordKey = `${expectedPrefix}${filename}`;
+          const oldImageKey = record.imageKey;
+          const newImageKey = `images/${targetYear}/${targetMonth}/${targetDay}/${filename.replace(/\.json$/, ".jpg")}`;
+
+          if (oldImageKey && oldImageKey !== newImageKey) {
+            const imgObj = await env.RECEIPTS.get(oldImageKey);
+            if (imgObj) {
+              await env.RECEIPTS.put(newImageKey, imgObj.body, {
+                httpMetadata: imgObj.httpMetadata,
+                customMetadata: imgObj.customMetadata
+              });
+              await env.RECEIPTS.delete(oldImageKey);
+              record.imageKey = newImageKey;
+            }
+          }
+
+          await env.RECEIPTS.put(targetRecordKey, JSON.stringify(record), { httpMetadata: { contentType: "application/json" } });
+          await env.RECEIPTS.delete(recordKey);
+        } else {
+          await env.RECEIPTS.put(recordKey, JSON.stringify(record), { httpMetadata: { contentType: "application/json" } });
+        }
+
+        return json({ updated: true, record, recordKey: targetRecordKey });
       } catch (error) {
         return json({ error: "Gagal mengedit transaksi.", detail: error.message }, 500);
       }
@@ -216,6 +270,8 @@ export default {
         const amount = safeAmount(form.get("amount"));
         const customDate = form.get("customDate");
         const customTime = form.get("customTime");
+        const isSurplus = form.get("isSurplus") === "true" || form.get("type") === "surplus";
+        const note = form.get("note") ? String(form.get("note")).trim().slice(0, 250) : "";
         
         if (!(image instanceof File) || !image.type.startsWith("image/")) return json({ error: "Foto tidak valid." }, 400);
         if (!amount) return json({ error: "Nominal tidak valid." }, 400);
@@ -249,22 +305,25 @@ export default {
 
         const savedAt = `${targetYear}-${targetMonth}-${targetDay}T${targetHour}:${targetMinute}:${targetSecond}+07:00`;
         const id = crypto.randomUUID().slice(0, 8);
-        const base = `${targetYear}/${targetMonth}/${targetDay}/${targetHour}${targetMinute}${targetSecond}-${amount}-${id}`;
+        const prefixFlag = isSurplus ? "surplus" : "regular";
+        const base = `${targetYear}/${targetMonth}/${targetDay}/${targetHour}${targetMinute}${targetSecond}-${amount}-${prefixFlag}-${id}`;
         const imageKey = `images/${base}.jpg`;
         const recordKey = `records/${base}.json`;
+
+        const recordData = { amount, savedAt, imageKey, isSurplus, note };
 
         await Promise.all([
           env.RECEIPTS.put(imageKey, image.stream(), {
             httpMetadata: { contentType: "image/jpeg", cacheControl: "public, max-age=31536000, immutable" },
-            customMetadata: { amount: String(amount), savedAt }
+            customMetadata: { amount: String(amount), savedAt, isSurplus: String(isSurplus), note }
           }),
-          env.RECEIPTS.put(recordKey, JSON.stringify({ amount, savedAt, imageKey }), {
+          env.RECEIPTS.put(recordKey, JSON.stringify(recordData), {
             httpMetadata: { contentType: "application/json" }
           })
         ]);
         const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
         if (!publicBase || publicBase.includes("example.com")) return json({ error: "R2_PUBLIC_URL belum diatur.", saved: true }, 500);
-        return json({ amount, savedAt, imageUrl: `${publicBase}/${imageKey}` });
+        return json({ amount, savedAt, isSurplus, note, imageUrl: `${publicBase}/${imageKey}` });
       } catch (error) {
         return json({ error: "Gagal menyimpan bukti. Coba lagi.", detail: error.message }, 500);
       }

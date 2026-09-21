@@ -129,9 +129,12 @@ Menghapus sesi login.
 * **Request Body**:
 ```json
 {
-  "recordKey": "records/2026/08/27/081520-18000-a1b2c3d4.json",
+  "recordKey": "records/2026/08/27/081520-18000-regular-a1b2c3d4.json",
   "newAmount": 20000,
-  "newTime": "08:30"
+  "newDate": "2026-08-27",
+  "newTime": "08:30",
+  "newIsSurplus": false,
+  "newNote": "Catatan opsional"
 }
 ```
 * **Response `200 OK`**:
@@ -141,8 +144,11 @@ Menghapus sesi login.
   "record": {
     "amount": 20000,
     "savedAt": "2026-08-27T08:30:00+07:00",
-    "imageKey": "images/2026/08/27/081520-18000-a1b2c3d4.jpg"
-  }
+    "isSurplus": false,
+    "note": "Catatan opsional",
+    "imageKey": "images/2026/08/27/081520-18000-regular-a1b2c3d4.jpg"
+  },
+  "recordKey": "records/2026/08/27/081520-18000-regular-a1b2c3d4.json"
 }
 ```
 * **Response `401 Unauthorized`**: Jika PIN tidak disertakan atau salah.

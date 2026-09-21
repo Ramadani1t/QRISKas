@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "id.qriskas.mobile"
-    compileSdk = 33
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "id.qriskas.mobile"

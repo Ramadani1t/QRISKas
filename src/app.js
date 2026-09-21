@@ -1,16 +1,21 @@
 const $=id=>document.getElementById(id);
 const ids=[
   "camera","cameraEmpty","startCamera","toggleCamMode","capture","nativeCamBtn","nativeCamInput","fileInput",
+  "openSurplusBtn","confirmSurplusBadge","confirmNoteDisplay",
   "result","preview","amount","save","manual","manualDialog","manualAmount","manualDate","manualTime",
-  "dateTimeFieldGroup","displayDate","displayTime","applyManual","rescan","canvas","success","shareText","share","copy",
-  "again","toast","scanTab","historyTab","scanPage","historyPage","historyDate","historyLoading",
-  "historyEmpty","historyList","recapBox","historyTotal","shareRecap","copyRecap",
+  "dateTimeFieldGroup","manualSurplusGroup","manualIsSurplus","manualNoteWrap","manualNote","displayDate","displayTime","applyManual",
+  "surplusDialog","surplusAmount","surplusNote","surplusGalleryBtn","surplusGalleryText",
+  "surplusFileInput","surplusPreviewWrap","surplusPreviewImg","removeSurplusPhoto","surplusAutoProofNote",
+  "surplusDate","surplusTime","saveSurplusBtn",
+  "rescan","canvas","success","shareText","share","copy","again","toast",
+  "scanTab","historyTab","scanPage","historyPage","historyDate","historyLoading",
+  "historyEmpty","historyList","recapBox","recapSalesRow","recapSalesTotal","recapSurplusRow","recapSurplusTotal","recapDivider","historyTotal","shareRecap","copyRecap",
   "groupedTransactions","groupedList","groupedSummaryBadge","groupedCopyBtn",
-  "editDialog","editAmount","editTime","editPinInput","saveEditBtn",
+  "editDialog","editAmount","editDate","editTime","editIsSurplus","editNoteWrap","editNote","editPinInput","saveEditBtn",
   "deleteDialog","deleteConfirmInfo","deletePinInput","deletePasswordInput","confirmDeleteBtn",
   "externalShortcut","settingsBtn","settingsDialog","settingDefaultCam","settingNativeCamMode","customPackageFields",
   "settingCustomPackage","settingShortcutEnabled","settingShortcutLabel","settingShortcutUrl","shortcutFields",
-  "settingGroupedEnabled","settingRetentionDays","cleanNowBtn","saveSettingsBtn"
+  "settingSurplusEnabled","settingGroupedEnabled","settingRetentionDays","cleanNowBtn","saveSettingsBtn"
 ];
 const e=Object.fromEntries(ids.map(id=>[id,$(id)]));
 let stream,imageBlob,amount=0,recapText="",originalTime="",originalDate="",pendingDeleteRecord=null,pendingEditRecord=null;
@@ -19,8 +24,21 @@ let currentFacingMode=localStorage.getItem("preferredFacingMode")||"environment"
 let allVideoDevices=[];
 let currentDeviceIndex=0;
 let currentRole="kasir";
+let isSurplusMode=false,currentNote="",surplusSelectedBlob=null;
 
 const rupiah=n=>new Intl.NumberFormat("id-ID").format(n);
+const escapeHtml=s=>String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+const formatReceiptLine=(time,amt,isSurplus,note)=>{
+  let tag="";
+  if(isSurplus&&note){
+    tag=` (Surplus: ${note})`;
+  }else if(isSurplus){
+    tag=` (Surplus)`;
+  }else if(note){
+    tag=` (${note})`;
+  }
+  return `${time} - ${rupiah(amt)}${tag}`;
+};
 const toast=t=>{e.toast.textContent=t;e.toast.classList.add("show");setTimeout(()=>e.toast.classList.remove("show"),2800)};
 const localDate=()=>{const p=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Jakarta",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(),v=Object.fromEntries(p.map(x=>[x.type,x.value]));return `${v.year}-${v.month}-${v.day}`};
 const currentJakartaTime=()=>{const p=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(),v=Object.fromEntries(p.map(x=>[x.type,x.value]));return `${v.hour}:${v.minute}`};
@@ -36,7 +54,8 @@ function loadSettings(){
   const shortcutLabel=localStorage.getItem("shortcutLabel")||"Web Utama";
   const shortcutUrl=localStorage.getItem("shortcutUrl")||"https://tahunyakrispiya.my.id";
   const groupedEnabled=localStorage.getItem("groupedEnabled")!=="false";
-  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled};
+  const surplusEnabled=localStorage.getItem("surplusEnabled")!=="false";
+  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled};
 }
 
 function applySettingsUI(s){
@@ -56,7 +75,16 @@ function applySettingsUI(s){
   if(currentRole==="guest"){
     if(e.settingsBtn) e.settingsBtn.style.display="none";
     if(e.externalShortcut) e.externalShortcut.style.display="none";
+    if(e.openSurplusBtn) e.openSurplusBtn.style.display="none";
+    if(e.manualSurplusGroup) e.manualSurplusGroup.style.display="none";
     return;
+  }
+
+  if(e.openSurplusBtn){
+    e.openSurplusBtn.style.display=s.surplusEnabled?"flex":"none";
+  }
+  if(e.manualSurplusGroup){
+    e.manualSurplusGroup.style.display=s.surplusEnabled?"block":"none";
   }
 
   if(e.settingsBtn){
@@ -87,6 +115,7 @@ async function openSettingsModal(){
   }
   if(e.settingShortcutLabel)e.settingShortcutLabel.value=s.shortcutLabel;
   if(e.settingShortcutUrl)e.settingShortcutUrl.value=s.shortcutUrl;
+  if(e.settingSurplusEnabled)e.settingSurplusEnabled.checked=s.surplusEnabled;
   if(e.settingGroupedEnabled)e.settingGroupedEnabled.checked=s.groupedEnabled;
 
   try{
@@ -113,6 +142,7 @@ async function saveSettings(ev){
   if(!shortcutUrl)shortcutUrl="https://tahunyakrispiya.my.id";
   else if(!/^https?:\/\//i.test(shortcutUrl))shortcutUrl="https://"+shortcutUrl;
 
+  const surplusEnabled=e.settingSurplusEnabled?e.settingSurplusEnabled.checked:true;
   const groupedEnabled=e.settingGroupedEnabled?e.settingGroupedEnabled.checked:true;
   const retentionDays=Number(e.settingRetentionDays?.value||30);
 
@@ -131,9 +161,10 @@ async function saveSettings(ev){
   localStorage.setItem("shortcutEnabled",String(shortcutEnabled));
   localStorage.setItem("shortcutLabel",shortcutLabel);
   localStorage.setItem("shortcutUrl",shortcutUrl);
+  localStorage.setItem("surplusEnabled",String(surplusEnabled));
   localStorage.setItem("groupedEnabled",String(groupedEnabled));
 
-  applySettingsUI({facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled});
+  applySettingsUI({facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled});
   if(e.settingsDialog)e.settingsDialog.close();
   toast("Pengaturan disimpan");
 
@@ -316,6 +347,12 @@ function openManual(mode="default"){
     e.dateTimeFieldGroup.style.display=isInstantCam?"none":"";
   }
 
+  if(e.manualIsSurplus){
+    e.manualIsSurplus.checked=Boolean(isSurplusMode);
+    if(e.manualNoteWrap)e.manualNoteWrap.style.display=isSurplusMode?"block":"none";
+    if(e.manualNote)e.manualNote.value=currentNote||"";
+  }
+
   e.manualDialog.showModal();
   setTimeout(()=>e.manualAmount.focus(),100);
 }
@@ -328,6 +365,9 @@ async function useSource(s, source="camera"){
   imageBlob=await canvasBlob(e.canvas);
   e.preview.src=URL.createObjectURL(imageBlob);
   amount=0;e.amount.textContent="0";
+  isSurplusMode=false;currentNote="";
+  if(e.confirmSurplusBadge)e.confirmSurplusBadge.classList.add("hidden");
+  if(e.confirmNoteDisplay)e.confirmNoteDisplay.classList.add("hidden");
   
   const nowT=currentJakartaTime();
   const todayD=localDate();
@@ -352,6 +392,8 @@ async function save(){
     const fd=new FormData();
     fd.append("image",imageBlob,"bukti-qris.jpg");
     fd.append("amount",String(amount));
+    fd.append("isSurplus",String(Boolean(isSurplusMode)));
+    if(currentNote) fd.append("note",currentNote);
 
     const selectedDate=e.displayDate?.value||e.manualDate?.value;
     if(selectedDate){
@@ -369,8 +411,9 @@ async function save(){
       throw new Error(data.error);
     }
 
-    const time=new Intl.DateTimeFormat("id-ID",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(data.savedAt));
-    e.shareText.textContent=`${time} - ${rupiah(data.amount)} gambar ${data.imageUrl}`;
+    const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(data.savedAt));
+    const line=formatReceiptLine(time,data.amount,data.isSurplus,data.note);
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
@@ -382,7 +425,160 @@ function reset(){
   e.result.classList.add("hidden");
   e.success.classList.add("hidden");
   imageBlob=null;amount=0;
+  isSurplusMode=false;currentNote="";
+  surplusSelectedBlob=null;
+  if(e.confirmSurplusBadge)e.confirmSurplusBadge.classList.add("hidden");
+  if(e.confirmNoteDisplay)e.confirmNoteDisplay.classList.add("hidden");
+  if(e.manualIsSurplus)e.manualIsSurplus.checked=false;
+  if(e.manualNoteWrap)e.manualNoteWrap.style.display="none";
+  if(e.manualNote)e.manualNote.value="";
   window.scrollTo({top:0,behavior:"smooth"});
+}
+
+async function generateSurplusProofImage(nominal,note,dateStr,timeStr){
+  const c=document.createElement("canvas");
+  c.width=800;c.height=600;
+  const ctx=c.getContext("2d");
+  const grad=ctx.createLinearGradient(0,0,800,600);
+  grad.addColorStop(0,"#191506");
+  grad.addColorStop(1,"#0a0903");
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,800,600);
+
+  ctx.strokeStyle="#ffd000";
+  ctx.lineWidth=6;
+  ctx.strokeRect(16,16,768,568);
+
+  ctx.strokeStyle="#342c10";
+  ctx.lineWidth=2;
+  ctx.strokeRect(26,26,748,548);
+
+  ctx.fillStyle="#ffd000";
+  ctx.font="bold 22px system-ui,sans-serif";
+  ctx.textAlign="center";
+  ctx.fillText("TAHUNYA KRISPIYA • QRIS KAS",400,75);
+
+  ctx.fillStyle="rgba(56,189,248,0.15)";
+  ctx.fillRect(230,95,340,36);
+  ctx.strokeStyle="#38bdf8";
+  ctx.lineWidth=1.5;
+  ctx.strokeRect(230,95,340,36);
+
+  ctx.fillStyle="#38bdf8";
+  ctx.font="bold 15px system-ui,sans-serif";
+  ctx.fillText("✨ BUKTI CATATAN SURPLUS ✨",400,119);
+
+  ctx.fillStyle="#a89f82";
+  ctx.font="14px system-ui,sans-serif";
+  ctx.fillText("NOMINAL UANG SURPLUS / LEBIH",400,180);
+
+  ctx.fillStyle="#ffffff";
+  ctx.font="900 58px system-ui,sans-serif";
+  ctx.fillText(`Rp${rupiah(nominal)}`,400,245);
+
+  ctx.fillStyle="#110e05";
+  ctx.fillRect(70,285,660,200);
+  ctx.strokeStyle="#342c10";
+  ctx.lineWidth=1.5;
+  ctx.strokeRect(70,285,660,200);
+
+  ctx.textAlign="left";
+  ctx.fillStyle="#a89f82";
+  ctx.font="bold 14px system-ui,sans-serif";
+  ctx.fillText("WAKTU TRANSAKSI",100,325);
+  ctx.fillStyle="#fffef5";
+  ctx.font="16px system-ui,sans-serif";
+  ctx.fillText(`${dateStr} • ${timeStr} WIB`,100,350);
+
+  ctx.fillStyle="#a89f82";
+  ctx.font="bold 14px system-ui,sans-serif";
+  ctx.fillText("CATATAN / KETERANGAN KASIR",100,395);
+  ctx.fillStyle="#ffd000";
+  ctx.font="italic 16px system-ui,sans-serif";
+  const noteText=note||"Tidak ada catatan khusus (Surplus Kasir)";
+  ctx.fillText(noteText.length>55?noteText.slice(0,52)+"...":noteText,100,422);
+
+  ctx.textAlign="center";
+  ctx.fillStyle="#a89f82";
+  ctx.font="12px system-ui,sans-serif";
+  ctx.fillText("Tercatat Resmi di Sistem Kasir Digital • Cloudflare Serverless Storage",400,535);
+
+  return await canvasBlob(c,0.85);
+}
+
+function openSurplusModal(){
+  if(e.surplusAmount)e.surplusAmount.value="";
+  if(e.surplusNote)e.surplusNote.value="";
+  if(e.surplusDate)e.surplusDate.value=localDate();
+  if(e.surplusTime)e.surplusTime.value=currentJakartaTime();
+  surplusSelectedBlob=null;
+  if(e.surplusPreviewWrap)e.surplusPreviewWrap.classList.add("hidden");
+  if(e.surplusPreviewImg)e.surplusPreviewImg.src="";
+  if(e.surplusGalleryText)e.surplusGalleryText.textContent="Pilih Foto Bukti dari Galeri";
+  if(e.surplusFileInput)e.surplusFileInput.value="";
+  if(e.surplusDialog){
+    e.surplusDialog.showModal();
+    setTimeout(()=>e.surplusAmount?.focus(),100);
+  }
+}
+
+async function saveSurplus(ev){
+  ev.preventDefault();
+  const sAmount=Number(e.surplusAmount.value.replace(/\D/g,""));
+  if(!sAmount)return toast("Masukkan nominal surplus yang benar");
+
+  const sNote=(e.surplusNote.value||"").trim();
+  const sDate=e.surplusDate.value||localDate();
+  const sTime=e.surplusTime.value||currentJakartaTime();
+
+  if(e.saveSurplusBtn){
+    e.saveSurplusBtn.disabled=true;
+    e.saveSurplusBtn.textContent="Menyimpan…";
+  }
+
+  try{
+    let finalBlob=surplusSelectedBlob;
+    if(!finalBlob){
+      finalBlob=await generateSurplusProofImage(sAmount,sNote,sDate,sTime);
+    }
+
+    const fd=new FormData();
+    fd.append("image",finalBlob,"bukti-surplus.jpg");
+    fd.append("amount",String(sAmount));
+    fd.append("customDate",sDate);
+    fd.append("customTime",sTime);
+    fd.append("isSurplus","true");
+    if(sNote)fd.append("note",sNote);
+
+    const response=await fetch("/api/receipts",{method:"POST",body:fd});
+    const data=await response.json();
+    if(!response.ok){
+      throw new Error(data.error);
+    }
+
+    const time=new Intl.DateTimeFormat("en-GB",{
+      timeZone:"Asia/Jakarta",
+      hour:"2-digit",
+      minute:"2-digit",
+      hourCycle:"h23"
+    }).format(new Date(data.savedAt));
+
+    const line=formatReceiptLine(time,data.amount,true,data.note);
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    if(e.surplusDialog)e.surplusDialog.close();
+
+    e.result.classList.add("hidden");
+    e.success.classList.remove("hidden");
+    e.success.scrollIntoView({behavior:"smooth"});
+    toast("Surplus berhasil dicatat!");
+  }catch(err){
+    toast(err.message||"Gagal menyimpan surplus");
+  }finally{
+    if(e.saveSurplusBtn){
+      e.saveSurplusBtn.disabled=false;
+      e.saveSurplusBtn.textContent="Simpan Surplus";
+    }
+  }
 }
 
 function showPage(page){
@@ -400,9 +596,31 @@ function openEditRecord(record){
   pendingEditRecord=record;
   if(e.editAmount)e.editAmount.value=rupiah(record.amount);
   
+  // Format tanggal & jam Jakarta dari savedAt
+  let recDate="";
+  if(record.savedAt){
+    try{
+      recDate=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Jakarta",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(record.savedAt));
+    }catch{
+      recDate=record.savedAt.split("T")[0];
+    }
+  }
+  if(!recDate) recDate=localDate();
+  if(e.editDate) e.editDate.value=recDate;
+
   // Format jam menggunakan en-GB agar separator selalu ':' bukan '.'
-  const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(record.savedAt));
-  if(e.editTime)e.editTime.value=time;
+  let time="";
+  if(record.savedAt){
+    try{
+      time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(record.savedAt));
+    }catch{
+      time=currentJakartaTime();
+    }
+  }
+  if(!time) time=currentJakartaTime();
+  if(e.editTime) e.editTime.value=time;
+  if(e.editIsSurplus)e.editIsSurplus.checked=Boolean(record.isSurplus);
+  if(e.editNote)e.editNote.value=record.note||"";
   
   if(e.editPinInput)e.editPinInput.value=sessionStorage.getItem("deletePin")||"";
   if(e.editDialog)e.editDialog.showModal();
@@ -413,8 +631,12 @@ async function handleSaveEdit(ev){
   if(!pendingEditRecord)return;
   const newAmount=Number(e.editAmount.value.replace(/\D/g,""));
   if(!newAmount)return toast("Nominal rupiah tidak valid");
+  const newDate=(e.editDate?.value||"").trim();
+  if(!newDate)return toast("Tanggal transaksi wajib diisi");
   const newTime=(e.editTime?.value||"").trim();
   if(!newTime)return toast("Jam transaksi wajib diisi");
+  const newIsSurplus=e.editIsSurplus?e.editIsSurplus.checked:false;
+  const newNote=(e.editNote?.value||"").trim();
   const pin=(e.editPinInput?.value||"").trim();
   if(!pin)return toast("PIN 6-digit wajib diisi");
 
@@ -427,7 +649,7 @@ async function handleSaveEdit(ev){
     const response=await fetch("/api/receipts",{
       method:"PUT",
       headers:{"content-type":"application/json","x-delete-pin":pin},
-      body:JSON.stringify({recordKey:pendingEditRecord.recordKey,newAmount,newTime})
+      body:JSON.stringify({recordKey:pendingEditRecord.recordKey,newAmount,newDate,newTime,newIsSurplus,newNote})
     });
     const data=await response.json();
     if(!response.ok){
@@ -438,6 +660,9 @@ async function handleSaveEdit(ev){
     if(e.editDialog)e.editDialog.close();
     toast("Transaksi berhasil diperbarui");
     pendingEditRecord=null;
+    if(newDate && e.historyDate && e.historyDate.value!==newDate){
+      e.historyDate.value=newDate;
+    }
     await loadHistory();
   }catch(x){
     toast(x.message||"Gagal mengedit transaksi");
@@ -530,24 +755,44 @@ async function loadHistory(init=false){
 
     // Hitung total dan kelompokkan transaksi dengan nominal yang sama
     const groupMap=new Map();
-    let total=0;const lines=[],links=[];
+    let total=0, salesTotal=0, surplusTotal=0;
+    const lines=[],links=[];
     for(const [index,r] of data.records.entries()){
       total+=r.amount;
+      const isSurplus=Boolean(r.isSurplus);
+      if(isSurplus){
+        surplusTotal+=r.amount;
+      }else{
+        salesTotal+=r.amount;
+      }
+
       const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(r.savedAt));
-      lines.push(`${index+1}. ${time} - ${rupiah(r.amount)}`);
+      const line=formatReceiptLine(time,r.amount,isSurplus,r.note);
+      lines.push(`${index+1}. ${line}`);
       links.push(`${index+1}. ${r.imageUrl}`);
 
-      if(!groupMap.has(r.amount)){
-        groupMap.set(r.amount,{amount:r.amount,count:0,total:0,times:[]});
+      if(!isSurplus){
+        if(!groupMap.has(r.amount)){
+          groupMap.set(r.amount,{amount:r.amount,count:0,total:0,times:[]});
+        }
+        const g=groupMap.get(r.amount);
+        g.count++;
+        g.total+=r.amount;
+        g.times.push(time);
       }
-      const g=groupMap.get(r.amount);
-      g.count++;
-      g.total+=r.amount;
-      g.times.push(time);
 
       const item=document.createElement("article");
-      item.className="history-item";
-      item.innerHTML=`<img src="${r.imageUrl}" alt="Bukti QRIS" loading="lazy"><div><time>${time} WIB</time><strong>Rp${rupiah(r.amount)}</strong><a href="${r.imageUrl}" target="_blank" rel="noopener">Lihat foto</a></div>${data.role==="admin"?'<div class="history-item-actions"><button class="edit-record">Edit</button><button class="delete-record">Hapus</button></div>':""}`;
+      item.className=`history-item${isSurplus?" is-surplus":""}`;
+      const surplusBadgeHtml=isSurplus?`<span class="badge-surplus">✨ SURPLUS</span>`:"";
+      const safeNote=escapeHtml(r.note);
+      const noteHtml=r.note?`<div class="history-item-note" title="${safeNote}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><span>${safeNote}</span></div>`:"";
+      const adminActionsHtml=data.role==="admin"?`<button class="edit-record" type="button" aria-label="Edit transaksi">Edit</button><button class="delete-record" type="button" aria-label="Hapus transaksi">Hapus</button>`:"";
+
+      item.innerHTML=`<img class="history-item-thumb" src="${r.imageUrl}" alt="Bukti ${isSurplus?"Surplus":"QRIS"}" loading="lazy"><div class="history-item-body"><div class="history-item-header"><div class="history-item-meta"><time class="history-item-time">${time} WIB</time>${surplusBadgeHtml}</div><div class="history-item-actions"><button class="copy-record" type="button" title="Salin transaksi ini">Salin</button>${adminActionsHtml}</div></div><strong class="history-item-amount">Rp${rupiah(r.amount)}</strong>${noteHtml}<a class="history-item-link" href="${r.imageUrl}" target="_blank" rel="noopener"><span>Lihat foto bukti</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></div>`;
+      item.querySelector(".copy-record").onclick=async()=>{
+        await navigator.clipboard.writeText(`${line} gambar ${r.imageUrl}`);
+        toast("Transaksi disalin");
+      };
       if(data.role==="admin"){
         item.querySelector(".edit-record").onclick=()=>openEditRecord(r);
         item.querySelector(".delete-record").onclick=()=>removeRecord(r);
@@ -597,8 +842,24 @@ async function loadHistory(init=false){
       };
     }
 
-    recapText=`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n*Total QRIS: ${rupiah(total)}*\n\nLink bukti:\n${links.join("\n")}`;
-    e.historyTotal.textContent=`Rp${rupiah(total)}`;
+    let recapTotalsText=`*Total QRIS: ${rupiah(total)}*`;
+    if(surplusTotal>0){
+      recapTotalsText=`*Total Penjualan: ${rupiah(salesTotal)}*\n*Total Surplus: ${rupiah(surplusTotal)}*\n*Grand Total QRIS: ${rupiah(total)}*`;
+    }
+
+    recapText=`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapTotalsText}\n\nLink bukti:\n${links.join("\n")}`;
+    if(e.recapSalesTotal)e.recapSalesTotal.textContent=`Rp${rupiah(salesTotal)}`;
+    if(e.recapSurplusTotal)e.recapSurplusTotal.textContent=`Rp${rupiah(surplusTotal)}`;
+    if(e.historyTotal)e.historyTotal.textContent=`Rp${rupiah(total)}`;
+
+    if(surplusTotal>0){
+      if(e.recapSurplusRow)e.recapSurplusRow.style.display="flex";
+      if(e.recapDivider)e.recapDivider.style.display="block";
+    }else{
+      if(e.recapSurplusRow)e.recapSurplusRow.style.display="none";
+      if(e.recapDivider)e.recapDivider.style.display="none";
+    }
+
     e.recapBox.classList.remove("hidden");
   }catch(x){toast(x.message||"Riwayat gagal dimuat");}
   finally{e.historyLoading.classList.add("hidden");}
@@ -731,8 +992,74 @@ e.applyManual.onclick=x=>{
   e.amount.textContent=rupiah(n);
   if(e.manualTime && e.displayTime)e.displayTime.value=e.manualTime.value;
   if(e.manualDate && e.displayDate)e.displayDate.value=e.manualDate.value;
+
+  if(e.manualIsSurplus){
+    isSurplusMode=e.manualIsSurplus.checked;
+    currentNote=isSurplusMode?(e.manualNote?.value||"").trim():"";
+    if(e.confirmSurplusBadge)e.confirmSurplusBadge.classList.toggle("hidden",!isSurplusMode);
+    if(e.confirmNoteDisplay){
+      if(isSurplusMode && currentNote){
+        e.confirmNoteDisplay.textContent=`Catatan: ${currentNote}`;
+        e.confirmNoteDisplay.classList.remove("hidden");
+      }else{
+        e.confirmNoteDisplay.classList.add("hidden");
+      }
+    }
+  }
+
   e.manualDialog.close();
 };
+
+if(e.manualIsSurplus){
+  e.manualIsSurplus.onchange=()=>{
+    if(e.manualNoteWrap){
+      e.manualNoteWrap.style.display=e.manualIsSurplus.checked?"block":"none";
+      if(e.manualIsSurplus.checked && e.manualNote){
+        setTimeout(()=>e.manualNote.focus(),100);
+      }
+    }
+  };
+}
+
+if(e.openSurplusBtn) e.openSurplusBtn.onclick=openSurplusModal;
+if(e.saveSurplusBtn) e.saveSurplusBtn.onclick=saveSurplus;
+
+if(e.surplusAmount){
+  e.surplusAmount.oninput=()=>{
+    const d=e.surplusAmount.value.replace(/\D/g,"");
+    e.surplusAmount.value=d?rupiah(Number(d)):"";
+  };
+}
+
+if(e.surplusFileInput){
+  e.surplusFileInput.onchange=()=>{
+    const f=e.surplusFileInput.files[0];
+    if(!f)return;
+    const img=new Image();
+    img.onload=async()=>{
+      const w=img.naturalWidth,h=img.naturalHeight,max=1100,z=Math.min(1,max/w);
+      e.canvas.width=Math.round(w*z);
+      e.canvas.height=Math.round(h*z);
+      e.canvas.getContext("2d").drawImage(img,0,0,e.canvas.width,e.canvas.height);
+      surplusSelectedBlob=await canvasBlob(e.canvas);
+      if(e.surplusPreviewImg)e.surplusPreviewImg.src=URL.createObjectURL(surplusSelectedBlob);
+      if(e.surplusPreviewWrap)e.surplusPreviewWrap.classList.remove("hidden");
+      if(e.surplusGalleryText)e.surplusGalleryText.textContent="Ganti Foto Bukti Galeri";
+      URL.revokeObjectURL(img.src);
+    };
+    img.src=URL.createObjectURL(f);
+  };
+}
+
+if(e.removeSurplusPhoto){
+  e.removeSurplusPhoto.onclick=()=>{
+    surplusSelectedBlob=null;
+    if(e.surplusPreviewWrap)e.surplusPreviewWrap.classList.add("hidden");
+    if(e.surplusPreviewImg)e.surplusPreviewImg.src="";
+    if(e.surplusGalleryText)e.surplusGalleryText.textContent="Pilih Foto Bukti dari Galeri";
+    if(e.surplusFileInput)e.surplusFileInput.value="";
+  };
+}
 
 e.share.onclick=()=>shareText(e.shareText.textContent);
 e.copy.onclick=async()=>{await navigator.clipboard.writeText(e.shareText.textContent);toast("Teks disalin");};
@@ -747,3 +1074,4 @@ if(e.saveEditBtn) e.saveEditBtn.onclick=handleSaveEdit;
 applySettingsUI(loadSettings());
 e.historyDate.value=localDate();
 loadHistory(true);
+

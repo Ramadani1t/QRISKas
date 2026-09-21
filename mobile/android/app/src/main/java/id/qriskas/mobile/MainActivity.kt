@@ -36,7 +36,6 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val REQUEST_FILE_CHOOSER = 2001
         private const val REQUEST_NATIVE_CAMERA = 2002
-        private const val REQUEST_PERMISSIONS = 1003
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -68,8 +67,6 @@ class MainActivity : AppCompatActivity() {
             setSupportZoom(false)
             builtInZoomControls = false
             displayZoomControls = false
-            // Hardware acceleration untuk kamera WebRTC
-            setRenderPriority(WebSettings.RenderPriority.HIGH)
             cacheMode = WebSettings.LOAD_DEFAULT
             useWideViewPort = true
             loadWithOverviewMode = true
@@ -113,7 +110,6 @@ class MainActivity : AppCompatActivity() {
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if (request.isForMainFrame) {
-                    // Tampilkan halaman offline sederhana
                     val offlinePage = buildOfflinePage()
                     view.loadDataWithBaseURL(null, offlinePage, "text/html", "UTF-8", null)
                 }
@@ -123,41 +119,43 @@ class MainActivity : AppCompatActivity() {
         // WebChromeClient: handle kamera permission & file chooser
         webView.webChromeClient = object : WebChromeClient() {
 
-            // Grant permission kamera/mikrofon ke WebView secara otomatis
+            // Grant permission kamera/mikrofon ke WebView (WebRTC/getUserMedia) secara otomatis
             override fun onPermissionRequest(request: PermissionRequest) {
                 runOnUiThread {
                     if (CameraPermissionHelper.hasCameraPermission(this@MainActivity)) {
                         request.grant(request.resources)
                     } else {
                         CameraPermissionHelper.requestCameraPermission(this@MainActivity)
-                        // Grant setelah permission diberikan — akan trigger ulang
                         request.grant(request.resources)
                     }
                 }
             }
 
-            // Handle <input type="file"> dari WebView (galeri / kamera)
+            // Handle <input type="file"> dari WebView (galeri / kamera belakang hardware)
             override fun onShowFileChooser(
                 webView: WebView,
                 filePathCallback: ValueCallback<Array<Uri>>,
                 fileChooserParams: FileChooserParams
             ): Boolean {
-                // Batalkan callback lama jika ada
                 fileChooserCallback?.onReceiveValue(null)
                 fileChooserCallback = filePathCallback
 
-                // Intent untuk galeri
+                val cameraIntent = createCameraIntent()
+
+                // Jika HTML meminta capture kamera secara langsung
+                if (fileChooserParams.isCaptureEnabled && cameraIntent != null) {
+                    startActivityForResult(cameraIntent, REQUEST_FILE_CHOOSER)
+                    return true
+                }
+
                 val galleryIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
                     type = "image/*"
                 }
 
-                // Intent untuk kamera belakang (Camera2 via MediaStore)
-                val cameraIntent = createCameraIntent()
-
-                // Chooser gabungan: galeri + kamera
-                val chooserIntent = Intent.createChooser(galleryIntent, "Pilih Foto atau Ambil Kamera")
-                if (cameraIntent != null) {
-                    chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(cameraIntent))
+                val chooserIntent = Intent.createChooser(galleryIntent, "Pilih Foto atau Kamera").apply {
+                    if (cameraIntent != null) {
+                        putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(cameraIntent))
+                    }
                 }
 
                 startActivityForResult(chooserIntent, REQUEST_FILE_CHOOSER)
@@ -173,8 +171,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Buat Camera Intent yang langsung membuka kamera BELAKANG via Camera2.
-     * Ini adalah hardware-level access — tidak lewat WebView getUserMedia.
+     * Buat Camera Intent yang langsung membuka kamera BELAKANG secara hardware-level via Bundle extras.
      */
     private fun createCameraIntent(): Intent? {
         return try {
@@ -188,9 +185,11 @@ class MainActivity : AppCompatActivity() {
 
             Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
                 putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
-                // Paksa kamera belakang via Bundle (hardware-level)
+                // Paksa kamera belakang secara hardware-level via Bundle
                 putExtra("android.intent.extra.USE_FRONT_CAMERA", false)
-                putExtra("android.intent.extra.CAMERA_FACING", 0) // 0 = belakang
+                putExtra("android.intent.extra.CAMERA_FACING", 0) // 0 = Back
+                putExtra("android.intent.extras.CAMERA_FACING", 0)
+                putExtra("android.intent.extras.LENS_FACING_FRONT", 0)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             }
@@ -204,14 +203,12 @@ class MainActivity : AppCompatActivity() {
      */
     private fun createTempImageFile(): File {
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-            ?: cacheDir
+        val storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: cacheDir
         return File.createTempFile("QRISKAS_${timeStamp}_", ".jpg", storageDir)
     }
 
     /**
-     * Dipanggil dari WebAppInterface (JS Bridge) untuk launch kamera native langsung.
-     * Ini yang "hardware-level" via Android Camera Intent.
+     * Dipanggil dari WebAppInterface (JS Bridge) untuk launch kamera native belakang langsung.
      */
     fun launchNativeCamera() {
         if (!CameraPermissionHelper.hasCameraPermission(this)) {
@@ -228,7 +225,7 @@ class MainActivity : AppCompatActivity() {
     /**
      * Handle hasil dari file chooser atau kamera native.
      */
-    @Deprecated("Deprecated but needed for pre-API 30")
+    @Deprecated("Deprecated but needed for compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
@@ -236,9 +233,7 @@ class MainActivity : AppCompatActivity() {
             REQUEST_FILE_CHOOSER -> {
                 val result = if (resultCode == Activity.RESULT_OK) {
                     when {
-                        // User pilih dari galeri
                         data?.data != null -> arrayOf(data.data!!)
-                        // User ambil foto dari kamera (tersimpan di cameraPhotoUri)
                         cameraPhotoUri != null -> arrayOf(cameraPhotoUri!!)
                         else -> null
                     }
@@ -250,17 +245,14 @@ class MainActivity : AppCompatActivity() {
 
             REQUEST_NATIVE_CAMERA -> {
                 if (resultCode == Activity.RESULT_OK && cameraPhotoUri != null) {
-                    // Kirim URI foto ke WebView via JS
                     val uriString = cameraPhotoUri.toString()
                     val js = """
                         (function() {
                             if (window._qriskasNativeCameraCallback) {
                                 window._qriskasNativeCameraCallback('$uriString');
                             } else {
-                                // Fallback: inject ke native cam input jika ada
                                 var input = document.getElementById('nativeCamInput');
                                 if (input) {
-                                    // Simulasi file input change
                                     window._androidCameraUri = '$uriString';
                                     input.dispatchEvent(new Event('androidcamera', {bubbles: true}));
                                 }
@@ -268,33 +260,26 @@ class MainActivity : AppCompatActivity() {
                         })();
                     """.trimIndent()
                     webView.evaluateJavascript(js, null)
-                } else {
-                    cameraPhotoUri = null
                 }
             }
         }
     }
 
     /**
-     * Inject JavaScript helper ke halaman web agar app bisa mendeteksi
-     * bahwa ini berjalan di Android WebView dan menggunakan bridge.
+     * Inject JavaScript helper ke halaman web agar web app mendeteksi Android bridge.
      */
     private fun injectAndroidHelperJs() {
         val js = """
             (function() {
-                // Tandai bahwa ini Android WebView
                 window.__isAndroidApp = true;
                 
-                // Override fungsi share WhatsApp jika ada
                 if (window.QriskasAndroid) {
-                    console.log('[QRISKAS Mobile] Android bridge aktif, versi Android: ' + 
+                    console.log('[QRISKAS Mobile] Android bridge active, SDK: ' + 
                         window.QriskasAndroid.getAndroidVersion());
                 }
                 
-                // Handle tombol "Buka Kamera Foto HP" agar gunakan kamera native Android
-                var nativeCamBtn = document.getElementById('nativeCamBtn');
                 var nativeCamInput = document.getElementById('nativeCamInput');
-                if (nativeCamBtn && nativeCamInput) {
+                if (nativeCamInput) {
                     nativeCamInput.setAttribute('capture', 'environment');
                 }
             })();
@@ -382,8 +367,6 @@ class MainActivity : AppCompatActivity() {
             CameraPermissionHelper.REQUEST_CODE_ALL,
             CameraPermissionHelper.REQUEST_CODE_CAMERA -> {
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    // Permission granted — WebView sudah bisa akses kamera
-                    // Reload hanya jika di halaman utama
                     webView.evaluateJavascript(
                         "console.log('[QRISKAS] Camera permission granted');",
                         null
@@ -393,7 +376,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Handle tombol back: navigasi di dalam WebView
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
             webView.goBack()

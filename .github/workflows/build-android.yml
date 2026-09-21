@@ -28,67 +28,38 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: 📱 Install Android SDK 33
+      - name: 📱 Install Android Platforms & Build Tools
         run: |
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.2" > /dev/null
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "platforms;android-33" "build-tools;34.0.0" > /dev/null
 
-      - name: 🔑 Write local.properties
+      - name: 🔑 Configure local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > mobile/android/local.properties
 
       - name: 🔧 Make gradlew executable
         run: chmod +x mobile/android/gradlew
 
-      - name: 🔨 Build Debug APK (with full error capture)
-        id: gradle_build
+      - name: 🔨 Build Debug APK
         working-directory: mobile/android
-        continue-on-error: true
-        run: |
-          ./gradlew assembleDebug \
-            --no-daemon \
-            --stacktrace \
-            2>&1 | tee /tmp/build.log
-          echo "GRADLE_EXIT=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: 📋 Print build errors to Step Summary
-        if: always()
-        run: |
-          EXIT="${{ steps.gradle_build.outputs.GRADLE_EXIT }}"
-          
-          echo "## 🔨 Build Log" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          
-          if [ -f /tmp/build.log ]; then
-            # Print error-relevant lines
-            grep -n "error\|Error\|FAILED\|Exception\|cannot\|unresolved\|not found\|Could not\|Build FAILED\|Caused by\|> Task\|compilation error" \
-              /tmp/build.log | tail -80 >> $GITHUB_STEP_SUMMARY || true
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "--- LAST 50 LINES ---" >> $GITHUB_STEP_SUMMARY
-            tail -50 /tmp/build.log >> $GITHUB_STEP_SUMMARY
-          else
-            echo "No build log found" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-      - name: ✅ Check build result
-        run: |
-          EXIT="${{ steps.gradle_build.outputs.GRADLE_EXIT }}"
-          if [ "$EXIT" != "0" ]; then
-            echo "Build failed with exit code: $EXIT"
-            exit 1
-          fi
-
-      - name: 📦 Prepare APK
+      - name: 📦 Prepare APK Artifact
         run: |
           mkdir -p artifact
-          APK=$(find mobile/android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -1)
-          [ -z "$APK" ] && { echo "No APK"; exit 1; }
-          cp "$APK" "artifact/qriskas-mobile-debug-$(date +%Y%m%d-%H%M).apk"
+          APK=$(find mobile/android/app/build/outputs/apk/debug -name "*.apk" 2>/dev/null | head -1)
+          if [ -z "$APK" ]; then
+            APK=$(find mobile/android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -1)
+          fi
+          if [ -z "$APK" ]; then
+            echo "❌ No APK found in build outputs!"
+            exit 1
+          fi
+          echo "Found APK at: $APK"
+          cp "$APK" "artifact/qriskas-mobile-debug.apk"
 
-      - name: ⬆️ Upload APK
+      - name: ⬆️ Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: qriskas-mobile-apk
-          path: artifact/*.apk
+          path: artifact/qriskas-mobile-debug.apk
           retention-days: 30

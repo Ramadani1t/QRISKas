@@ -148,13 +148,15 @@ Memungkinkan admin dan kasir melihat seluruh catatan transaksi per hari dan memb
 
 ### D. Alur 4: Edit Transaksi di Riwayat (*Edit Record Flow*)
 
-1. Kasir/Admin mengklik tombol **Edit** pada salah satu baris riwayat.
-2. Muncul dialog prompt JavaScript:
-   - Prompt 1: *Edit Nominal Rupiah*
-   - Prompt 2: *Edit Jam (format HH:mm)*
-   - Prompt 3: *Masukkan 6-digit PIN verifikasi*
-3. Mengirimkan request `PUT /api/receipts` dengan header `x-delete-pin`.
-4. Jika berhasil, riwayat dimuat ulang otomatis dan menampilkan data baru.
+1. Admin mengklik tombol **Edit** pada salah satu baris riwayat.
+2. Muncul modal `<dialog id="editDialog">`:
+   - Field 1: **Nominal Rupiah** (`editAmount`)
+   - Field 2: **Tanggal Transaksi** (`editDate`)
+   - Field 3: **Jam Transaksi (WIB)** (`editTime`)
+   - Field 4: **Status Surplus & Catatan/Keterangan** (`editIsSurplus`, `editNote`)
+   - Field 5: **PIN Verifikasi 6-Digit** (`editPinInput`)
+3. Mengirimkan request `PUT /api/receipts` dengan header `x-delete-pin` dan payload JSON (`recordKey`, `newAmount`, `newDate`, `newTime`, `newIsSurplus`, `newNote`).
+4. Jika berhasil, file di R2 disesuaikan (termasuk perpindahan direktori tanggal bila tanggal diubah) dan riwayat dimuat ulang secara otomatis.
 
 ---
 

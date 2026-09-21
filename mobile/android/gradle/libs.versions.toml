@@ -1,9 +1,9 @@
 [versions]
-agp = "8.5.0"
+agp = "8.2.2"
 kotlin = "1.9.24"
-coreKtx = "1.13.1"
-appcompat = "1.7.0"
-webkit = "1.11.0"
+coreKtx = "1.12.0"
+appcompat = "1.6.1"
+webkit = "1.10.0"
 constraintlayout = "2.1.4"
 
 [libraries]
