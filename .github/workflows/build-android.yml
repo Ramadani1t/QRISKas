@@ -18,11 +18,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Checkout repo ──────────────────────────────────────────────────
+      # ── 1. Checkout ────────────────────────────────────────────────────────
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Setup JDK 17 ───────────────────────────────────────────────────
+      # ── 2. JDK 17 ──────────────────────────────────────────────────────────
       - name: ☕ Setup JDK 17
         uses: actions/setup-java@v4
         with:
@@ -30,8 +30,8 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      # ── 3. Cache Gradle ───────────────────────────────────────────────────
-      - name: 🗃️ Cache Gradle packages
+      # ── 3. Cache Gradle ────────────────────────────────────────────────────
+      - name: 🗃️ Cache Gradle
         uses: actions/cache@v4
         with:
           path: |
@@ -41,79 +41,84 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      # ── 4. Setup Android SDK via sdkmanager ──────────────────────────────
-      - name: 📱 Setup Android SDK components
+      # ── 4. Install Android SDK 33 ──────────────────────────────────────────
+      - name: 📱 Install Android SDK 33
         run: |
-          # ANDROID_SDK_ROOT sudah tersedia di ubuntu-latest runner
-          echo "Android SDK Root: $ANDROID_SDK_ROOT"
-          
-          # Accept licenses
+          echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          
-          # Install required SDK components
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             "platforms;android-33" \
-            "build-tools;33.0.2" \
-            "platform-tools" \
-            > /dev/null 2>&1
+            "build-tools;33.0.2" > /dev/null
 
-      # ── 5. Make gradlew executable ────────────────────────────────────────
-      - name: 🔧 Grant execute permission to gradlew
+      # ── 5. Create local.properties ─────────────────────────────────────────
+      - name: 🔑 Write local.properties
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > mobile/android/local.properties
+          cat mobile/android/local.properties
+
+      # ── 6. Grant gradlew ───────────────────────────────────────────────────
+      - name: 🔧 Make gradlew executable
         run: chmod +x mobile/android/gradlew
 
-      # ── 6. Build Debug APK ────────────────────────────────────────────────
+      # ── 7. Validate Gradle files ───────────────────────────────────────────
+      - name: 🔍 Validate project structure
+        working-directory: mobile/android
+        run: |
+          echo "=== Root build.gradle.kts ==="
+          cat build.gradle.kts
+          echo ""
+          echo "=== settings.gradle.kts ==="
+          cat settings.gradle.kts
+          echo ""
+          echo "=== libs.versions.toml ==="
+          cat gradle/libs.versions.toml
+          echo ""
+          echo "=== app/build.gradle.kts ==="
+          cat app/build.gradle.kts
+
+      # ── 8. Build Debug APK ─────────────────────────────────────────────────
       - name: 🔨 Build Debug APK
         working-directory: mobile/android
         run: |
           ./gradlew assembleDebug \
             --no-daemon \
             --stacktrace \
-            --info \
-            -Pandroid.sdk.dir=$ANDROID_SDK_ROOT
+            -Dorg.gradle.jvmargs="-Xmx2048m -XX:MaxMetaspaceSize=512m"
         env:
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2 -Xmx2048m"
           ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false"
 
-      # ── 7. Find & rename APK ──────────────────────────────────────────────
+      # ── 9. Find APK ────────────────────────────────────────────────────────
       - name: 📦 Prepare APK artifact
         run: |
           mkdir -p artifact
-          APK_PATH=$(find mobile/android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -1)
-          if [ -z "$APK_PATH" ]; then
-            echo "❌ APK not found!"
-            find mobile/android/app/build/ -type f 2>/dev/null || echo "No build output"
-            exit 1
-          fi
-          echo "✅ Found APK: $APK_PATH"
-          TIMESTAMP=$(date +%Y%m%d-%H%M)
-          cp "$APK_PATH" "artifact/qriskas-mobile-debug-${TIMESTAMP}.apk"
+          APK=$(find mobile/android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -1)
+          [ -z "$APK" ] && { echo "❌ APK not found"; find mobile/android/app/build/ -type f 2>/dev/null; exit 1; }
+          echo "✅ APK: $APK"
+          cp "$APK" "artifact/qriskas-mobile-debug-$(date +%Y%m%d-%H%M).apk"
           ls -lh artifact/
 
-      # ── 8. Upload artifact ────────────────────────────────────────────────
-      - name: ⬆️ Upload APK artifact
+      # ── 10. Upload artifact ────────────────────────────────────────────────
+      - name: ⬆️ Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: qriskas-mobile-apk
           path: artifact/*.apk
           retention-days: 30
 
-      # ── 9. Build summary ─────────────────────────────────────────────────
+      # ── 11. Summary ────────────────────────────────────────────────────────
       - name: 📊 Build summary
         if: always()
         run: |
-          echo "## 📱 QRISKAS Mobile Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Item | Detail |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| App Name | QRISKAS Mobile |" >> $GITHUB_STEP_SUMMARY
+          echo "## 📱 QRISKAS Mobile" >> $GITHUB_STEP_SUMMARY
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| App | QRISKAS Mobile |" >> $GITHUB_STEP_SUMMARY
           echo "| Package | id.qriskas.mobile |" >> $GITHUB_STEP_SUMMARY
-          echo "| Target SDK | Android 13 (API 33) |" >> $GITHUB_STEP_SUMMARY
-          echo "| Min SDK | Android 8.0 (API 26) |" >> $GITHUB_STEP_SUMMARY
-          echo "| Build Type | Debug |" >> $GITHUB_STEP_SUMMARY
-          echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ job.status }}" == "success" ]; then
-            echo "> ✅ APK tersedia di tab **Artifacts** — berlaku 30 hari" >> $GITHUB_STEP_SUMMARY
+          echo "| Target | Android 13 (API 33) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "> ✅ APK siap di tab **Artifacts**" >> $GITHUB_STEP_SUMMARY
           else
-            echo "> ❌ Build gagal. Cek logs untuk detail." >> $GITHUB_STEP_SUMMARY
+            echo "> ❌ Build gagal — lihat logs" >> $GITHUB_STEP_SUMMARY
           fi
