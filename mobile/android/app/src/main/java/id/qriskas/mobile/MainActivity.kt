@@ -2,19 +2,33 @@ package id.qriskas.mobile
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
-import android.view.KeyEvent
+import android.util.Base64
+import android.util.Log
 import android.view.View
 import android.webkit.*
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import id.qriskas.mobile.databinding.ActivityMainBinding
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -30,12 +44,16 @@ class MainActivity : AppCompatActivity() {
     // File chooser callback dari WebView (untuk input type=file)
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
 
-    // URI foto yang diambil dari kamera native
+    // Launchers untuk Activity Result (Modern Android API)
+    private lateinit var hardwareCameraLauncher: ActivityResultLauncher<Intent>
+    private lateinit var fileChooserLauncher: ActivityResultLauncher<Intent>
+
+    // URI & File foto yang diambil dari kamera native
     private var cameraPhotoUri: Uri? = null
+    private var cameraPhotoFile: File? = null
 
     companion object {
-        private const val REQUEST_FILE_CHOOSER = 2001
-        private const val REQUEST_NATIVE_CAMERA = 2002
+        private const val TAG = "QRISKASMobile"
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -51,8 +69,69 @@ class MainActivity : AppCompatActivity() {
 
         webView = binding.webView
 
+        setupLaunchers()
         setupWebView()
+        setupBackPressHandler()
+        registerNetworkMonitoring()
         requestAllPermissionsIfNeeded()
+    }
+
+    private fun setupLaunchers() {
+        // Launcher untuk Hardware Camera Langsung (Full-HD + Auto-Orient EXIF)
+        hardwareCameraLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            val photo = cameraPhotoFile
+            if (result.resultCode == Activity.RESULT_OK && photo != null && photo.exists() && photo.length() > 0) {
+                Thread {
+                    val dataUrl = processPhotoFileToDataUrl(photo)
+                    runOnUiThread {
+                        if (dataUrl != null) {
+                            val js = """
+                                (function() {
+                                    if (window.onHardwareCameraCapture) {
+                                        window.onHardwareCameraCapture('$dataUrl');
+                                    } else if (window._qriskasNativeCameraCallback) {
+                                        window._qriskasNativeCameraCallback('$dataUrl');
+                                    } else {
+                                        var input = document.getElementById('nativeCamInput');
+                                        if (input) {
+                                            window._androidCameraDataUrl = '$dataUrl';
+                                            input.dispatchEvent(new CustomEvent('androidcamera', {detail: {dataUrl: '$dataUrl'}, bubbles: true}));
+                                        }
+                                    }
+                                })();
+                            """.trimIndent()
+                            webView.evaluateJavascript(js, null)
+                        } else {
+                            Toast.makeText(this@MainActivity, "Gagal memproses foto kamera", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }.start()
+            } else {
+                Log.d(TAG, "Hardware camera cancelled or empty file")
+            }
+        }
+
+        // Launcher untuk Chooser file/galeri standard
+        fileChooserLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (fileChooserCallback != null) {
+                var results: Array<Uri>? = null
+                if (result.resultCode == Activity.RESULT_OK) {
+                    val data = result.data
+                    val photo = cameraPhotoFile
+                    if (data?.data != null) {
+                        results = arrayOf(data.data!!)
+                    } else if (cameraPhotoUri != null && photo != null && photo.exists() && photo.length() > 0) {
+                        results = arrayOf(cameraPhotoUri!!)
+                    }
+                }
+                fileChooserCallback?.onReceiveValue(results)
+                fileChooserCallback = null
+            }
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -67,33 +146,41 @@ class MainActivity : AppCompatActivity() {
             setSupportZoom(false)
             builtInZoomControls = false
             displayZoomControls = false
-            cacheMode = WebSettings.LOAD_DEFAULT
             useWideViewPort = true
             loadWithOverviewMode = true
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            userAgentString = userAgentString + " QRISKAS-Android13/1.0 NativeHardwareCamera"
+
+            // Offline-first caching mode
+            cacheMode = if (isNetworkAvailable()) {
+                WebSettings.LOAD_DEFAULT
+            } else {
+                WebSettings.LOAD_CACHE_ELSE_NETWORK
+            }
         }
+
+        // Akselerasi Grafis Hardware 60 FPS
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
         // Inject JS bridge
         webView.addJavascriptInterface(WebAppInterface(this), "QriskasAndroid")
+        webView.addJavascriptInterface(WebAppInterface(this), "AndroidBridge")
 
         // WebViewClient: handle navigation & errors
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url.toString()
                 return when {
-                    // URL yang boleh dibuka di dalam WebView
                     url.startsWith(APP_URL) -> false
                     url.startsWith("https://scan.tahunyakrispiya.my.id") -> false
-                    // WhatsApp deep link → buka di app
                     url.startsWith("whatsapp://") || url.startsWith("https://api.whatsapp.com") -> {
                         try {
                             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                        } catch (e: Exception) {
+                        } catch (_: Exception) {
                             Toast.makeText(this@MainActivity, "WhatsApp tidak terinstall", Toast.LENGTH_SHORT).show()
                         }
                         true
                     }
-                    // Link eksternal lain → buka di browser
                     url.startsWith("http://") || url.startsWith("https://") -> {
                         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                         true
@@ -104,14 +191,23 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
-                // Inject helper JS agar web tahu ini Android WebView
                 injectAndroidHelperJs()
             }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                super.onReceivedError(view, request, error)
                 if (request.isForMainFrame) {
-                    val offlinePage = buildOfflinePage()
-                    view.loadDataWithBaseURL(null, offlinePage, "text/html", "UTF-8", null)
+                    if (!isNetworkAvailable()) {
+                        try {
+                            // Coba muat halaman dari cache lokal agar tidak blank putih
+                            view.settings.cacheMode = WebSettings.LOAD_CACHE_ONLY
+                            view.loadUrl(APP_URL)
+                        } catch (_: Exception) {
+                            view.loadDataWithBaseURL(null, buildOfflinePage(), "text/html", "UTF-8", null)
+                        }
+                    } else {
+                        view.loadDataWithBaseURL(null, buildOfflinePage(), "text/html", "UTF-8", null)
+                    }
                 }
             }
         }
@@ -119,7 +215,7 @@ class MainActivity : AppCompatActivity() {
         // WebChromeClient: handle kamera permission & file chooser
         webView.webChromeClient = object : WebChromeClient() {
 
-            // Grant permission kamera/mikrofon ke WebView (WebRTC/getUserMedia) secara otomatis
+            // Otomatis grant izin kamera ke WebRTC / live camera viewfinder
             override fun onPermissionRequest(request: PermissionRequest) {
                 runOnUiThread {
                     if (CameraPermissionHelper.hasCameraPermission(this@MainActivity)) {
@@ -131,51 +227,69 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // Handle <input type="file"> dari WebView (galeri / kamera belakang hardware)
+            // Handle <input type="file"> dari WebView
             override fun onShowFileChooser(
                 webView: WebView,
                 filePathCallback: ValueCallback<Array<Uri>>,
                 fileChooserParams: FileChooserParams
             ): Boolean {
-                fileChooserCallback?.onReceiveValue(null)
-                fileChooserCallback = filePathCallback
+                this@MainActivity.fileChooserCallback?.onReceiveValue(null)
+                this@MainActivity.fileChooserCallback = filePathCallback
 
                 val cameraIntent = createCameraIntent()
 
-                // Jika HTML meminta capture kamera secara langsung
+                // Jika input meminta capture kamera secara langsung
                 if (fileChooserParams.isCaptureEnabled && cameraIntent != null) {
-                    startActivityForResult(cameraIntent, REQUEST_FILE_CHOOSER)
+                    fileChooserLauncher.launch(cameraIntent)
                     return true
                 }
 
                 val galleryIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
                     type = "image/*"
                 }
 
-                val chooserIntent = Intent.createChooser(galleryIntent, "Pilih Foto atau Kamera").apply {
+                val chooserIntent = Intent(Intent.ACTION_CHOOSER).apply {
+                    putExtra(Intent.EXTRA_INTENT, galleryIntent)
+                    putExtra(Intent.EXTRA_TITLE, "Ambil Foto Struk QRIS atau Galeri")
                     if (cameraIntent != null) {
                         putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(cameraIntent))
                     }
                 }
 
-                startActivityForResult(chooserIntent, REQUEST_FILE_CHOOSER)
+                fileChooserLauncher.launch(chooserIntent)
                 return true
-            }
-
-            override fun onProgressChanged(view: WebView, newProgress: Int) {
-                super.onProgressChanged(view, newProgress)
             }
         }
 
         webView.loadUrl(APP_URL)
     }
 
+    private fun setupBackPressHandler() {
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                webView.evaluateJavascript(
+                    "(function(){ if(window.handleAndroidBack && typeof window.handleAndroidBack === 'function'){ return window.handleAndroidBack(); } return false; })()"
+                ) { value ->
+                    if (value != "true") {
+                        if (webView.canGoBack()) {
+                            webView.goBack()
+                        } else {
+                            finish()
+                        }
+                    }
+                }
+            }
+        })
+    }
+
     /**
-     * Buat Camera Intent yang langsung membuka kamera BELAKANG secara hardware-level via Bundle extras.
+     * Buat Camera Intent yang mengunci KAMERA BELAKANG secara hardware-level via Bundle extras.
      */
-    private fun createCameraIntent(): Intent? {
+    fun createCameraIntent(): Intent? {
         return try {
             val photoFile = createTempImageFile()
+            cameraPhotoFile = photoFile
             val photoUri = FileProvider.getUriForFile(
                 this,
                 "${packageName}.fileprovider",
@@ -185,26 +299,85 @@ class MainActivity : AppCompatActivity() {
 
             Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
                 putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
-                // Paksa kamera belakang secara hardware-level via Bundle
+                // Kunci kamera belakang secara hardware-level
                 putExtra("android.intent.extra.USE_FRONT_CAMERA", false)
-                putExtra("android.intent.extra.CAMERA_FACING", 0) // 0 = Back
+                putExtra("android.intent.extra.CAMERA_FACING", 0) // 0 = Back, 1 = Front
                 putExtra("android.intent.extras.CAMERA_FACING", 0)
                 putExtra("android.intent.extras.LENS_FACING_FRONT", 0)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             }
         } catch (e: Exception) {
+            Log.e(TAG, "Error creating camera intent", e)
             null
         }
     }
 
     /**
-     * Buat file sementara untuk menyimpan foto dari kamera.
+     * Buat file sementara untuk menyimpan foto HD dari kamera.
      */
     private fun createTempImageFile(): File {
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: cacheDir
         return File.createTempFile("QRISKAS_${timeStamp}_", ".jpg", storageDir)
+    }
+
+    /**
+     * Proses foto FileProvider ke data URL Base64 berkualitas tinggi dengan auto-orient EXIF.
+     */
+    private fun processPhotoFileToDataUrl(photoFile: File?): String? {
+        if (photoFile == null || !photoFile.exists() || photoFile.length() == 0L) return null
+        return try {
+            val boundsOptions = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(photoFile.absolutePath, boundsOptions)
+
+            val maxDim = 1600
+            var inSampleSize = 1
+            if (boundsOptions.outHeight > maxDim || boundsOptions.outWidth > maxDim) {
+                val halfHeight = boundsOptions.outHeight / 2
+                val halfWidth = boundsOptions.outWidth / 2
+                while (halfHeight / inSampleSize >= maxDim && halfWidth / inSampleSize >= maxDim) {
+                    inSampleSize *= 2
+                }
+            }
+
+            val decodeOptions = BitmapFactory.Options().apply {
+                this.inSampleSize = inSampleSize
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath, decodeOptions) ?: return null
+
+            val exif = ExifInterface(photoFile.absolutePath)
+            val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            val matrix = Matrix()
+            when (orientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.preScale(-1f, 1f)
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.preScale(1f, -1f)
+            }
+
+            val rotatedBitmap = if (!matrix.isIdentity) {
+                Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true).also {
+                    if (it != bitmap) bitmap.recycle()
+                }
+            } else {
+                bitmap
+            }
+
+            val outputStream = ByteArrayOutputStream()
+            rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
+            rotatedBitmap.recycle()
+            val byteArray = outputStream.toByteArray()
+            val base64 = Base64.encodeToString(byteArray, Base64.NO_WRAP)
+            "data:image/jpeg;base64,$base64"
+        } catch (e: Exception) {
+            Log.e(TAG, "Error converting photo to data url", e)
+            null
+        }
     }
 
     /**
@@ -215,53 +388,56 @@ class MainActivity : AppCompatActivity() {
             CameraPermissionHelper.requestCameraPermission(this)
             return
         }
-        val intent = createCameraIntent() ?: run {
-            Toast.makeText(this, "Tidak dapat membuka kamera", Toast.LENGTH_SHORT).show()
-            return
+        val intent = createCameraIntent()
+        if (intent != null) {
+            hardwareCameraLauncher.launch(intent)
+        } else {
+            Toast.makeText(this, "Tidak dapat membuka kamera hardware", Toast.LENGTH_SHORT).show()
         }
-        startActivityForResult(intent, REQUEST_NATIVE_CAMERA)
     }
 
     /**
-     * Handle hasil dari file chooser atau kamera native.
+     * Cek status koneksi jaringan dari sistem Android.
      */
-    @Deprecated("Deprecated but needed for compatibility")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
+    fun isNetworkAvailable(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
 
-        when (requestCode) {
-            REQUEST_FILE_CHOOSER -> {
-                val result = if (resultCode == Activity.RESULT_OK) {
-                    when {
-                        data?.data != null -> arrayOf(data.data!!)
-                        cameraPhotoUri != null -> arrayOf(cameraPhotoUri!!)
-                        else -> null
+    /**
+     * Daftarkan listener konektivitas untuk memicu auto-sync saat jaringan pulih kembali.
+     */
+    private fun registerNetworkMonitoring() {
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            cm.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    runOnUiThread {
+                        webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
+                        webView.evaluateJavascript(
+                            "(function(){ window.dispatchEvent(new Event('online')); window.dispatchEvent(new Event('qriskas:online')); if(window.syncOfflineReceipts){ window.syncOfflineReceipts(); } })()",
+                            null
+                        )
                     }
-                } else null
-
-                fileChooserCallback?.onReceiveValue(result)
-                fileChooserCallback = null
-            }
-
-            REQUEST_NATIVE_CAMERA -> {
-                if (resultCode == Activity.RESULT_OK && cameraPhotoUri != null) {
-                    val uriString = cameraPhotoUri.toString()
-                    val js = """
-                        (function() {
-                            if (window._qriskasNativeCameraCallback) {
-                                window._qriskasNativeCameraCallback('$uriString');
-                            } else {
-                                var input = document.getElementById('nativeCamInput');
-                                if (input) {
-                                    window._androidCameraUri = '$uriString';
-                                    input.dispatchEvent(new Event('androidcamera', {bubbles: true}));
-                                }
-                            }
-                        })();
-                    """.trimIndent()
-                    webView.evaluateJavascript(js, null)
                 }
-            }
+
+                override fun onLost(network: Network) {
+                    runOnUiThread {
+                        webView.settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+                        webView.evaluateJavascript(
+                            "(function(){ window.dispatchEvent(new Event('offline')); window.dispatchEvent(new Event('qriskas:offline')); })()",
+                            null
+                        )
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            Log.w(TAG, "Network monitoring registration skipped", e)
         }
     }
 
@@ -288,7 +464,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Halaman offline sederhana jika tidak ada koneksi.
+     * Halaman offline fallback jika cache belum tersedia.
      */
     private fun buildOfflinePage(): String {
         return """
@@ -374,14 +550,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-    }
-
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
-            webView.goBack()
-            return true
-        }
-        return super.onKeyDown(keyCode, event)
     }
 
     override fun onResume() {

@@ -12,14 +12,57 @@ import android.widget.Toast
 class WebAppInterface(private val activity: MainActivity) {
 
     /**
-     * Dipanggil dari JS untuk meminta kamera native Android.
-     * Contoh: window.QriskasAndroid.openNativeCamera()
+     * Dipanggil dari JS untuk meminta kamera native Android (level hardware).
+     * Contoh: window.QriskasAndroid.openHardwareCamera()
+     */
+    @JavascriptInterface
+    fun openHardwareCamera() {
+        activity.runOnUiThread {
+            activity.launchNativeCamera()
+        }
+    }
+
+    /**
+     * Alias openNativeCamera untuk kompatibilitas.
      */
     @JavascriptInterface
     fun openNativeCamera() {
         activity.runOnUiThread {
             activity.launchNativeCamera()
         }
+    }
+
+    /**
+     * Haptic feedback getar native saat scan berhasil.
+     */
+    @JavascriptInterface
+    fun vibrate(durationMs: Long) {
+        activity.runOnUiThread {
+            try {
+                val vibrator = activity.getSystemService(android.content.Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                if (vibrator != null && vibrator.hasVibrator()) {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        vibrator.vibrate(
+                            android.os.VibrationEffect.createOneShot(
+                                durationMs,
+                                android.os.VibrationEffect.DEFAULT_AMPLITUDE
+                            )
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(durationMs)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Cek status koneksi jaringan saat ini dari sisi native Android.
+     */
+    @JavascriptInterface
+    fun isNetworkAvailable(): Boolean {
+        return activity.isNetworkAvailable()
     }
 
     /**
