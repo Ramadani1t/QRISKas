@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag (e.g. v1.4.0)'
+        description: 'Release tag (e.g. v1.4.1)'
         required: true
-        default: 'v1.4.0'
+        default: 'v1.4.1'
 
 jobs:
   build-and-release:
@@ -34,23 +34,21 @@ jobs:
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "platforms;android-33" "build-tools;34.0.0" > /dev/null
 
-      - name: 🔑 Decode Release Keystore
-        # Decode keystore dari GitHub Secret ke file sementara di runner
-        # Menggunakan tr -d untuk membersihkan karakter carriage return (\r) atau spasi dari Windows
+      - name: 🔑 Setup Release Keystore
         run: |
           if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
             printf "%s" "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | tr -d '\r\n ' | base64 -d > /tmp/qriskas-release.jks
             FILESIZE=$(stat -c%s "/tmp/qriskas-release.jks" 2>/dev/null || echo 0)
             if [ "$FILESIZE" -gt 500 ]; then
               echo "KEYSTORE_PATH=/tmp/qriskas-release.jks" >> $GITHUB_ENV
-              echo "✅ Release keystore decoded successfully ($FILESIZE bytes)"
-            else
-              echo "KEYSTORE_PATH=" >> $GITHUB_ENV
-              echo "⚠️  Keystore file invalid or too small ($FILESIZE bytes) — falling back to debug key"
+              echo "✅ Release keystore decoded from secret ($FILESIZE bytes)"
             fi
+          elif [ -f "mobile/android/app/qriskas-release.jks" ]; then
+            echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/mobile/android/app/qriskas-release.jks" >> $GITHUB_ENV
+            echo "✅ Using bundled release keystore from repository"
           else
-            echo "KEYSTORE_PATH=" >> $GITHUB_ENV
-            echo "⚠️  RELEASE_KEYSTORE_BASE64 secret not set — using debug key"
+            echo "❌ Release keystore not found anywhere! Halting."
+            exit 1
           fi
 
       - name: 🔑 Configure local.properties
@@ -63,10 +61,20 @@ jobs:
         working-directory: mobile/android
         env:
           KEYSTORE_PATH: ${{ env.KEYSTORE_PATH }}
-          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD || 'qriskas2026' }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS || 'qriskas' }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD || 'qriskas2026' }}
         run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: 🔍 Verify APK Signature Certificate
+        run: |
+          APK=$(find mobile/android/app/build/outputs/apk/release -name "*.apk" 2>/dev/null | head -1)
+          if [ -n "$APK" ]; then
+            echo "=== VERIFIKASI SERTIFIKAT APK ==="
+            $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner verify --verbose --print-certs "$APK"
+          else
+            echo "⚠️ APK release not found for verification"
+          fi
 
       - name: 🗑️ Cleanup Keystore
         if: always()
@@ -116,14 +124,11 @@ jobs:
 
             ---
 
-            ### ⚡ Yang Baru di Versi Ini (v1.4.0)
-            - **Fitur Dokumentasi Struk Belanja Cash (Laci Fisik)**: Kasir dapat mencatat pengeluaran uang cash fisik/laci toko (beli es batu, gas, kresek, dsb.) lengkap dengan foto nota dan kartu bukti digital tanpa memotong saldo QRIS bank.
-            - **Uji Coba Signature Update**: Memastikan in-app update dari v1.3.0 ke v1.4.0 terpasang mulus tanpa bentrok signature.
-            - **Fix update APK**: download ke public Downloads, install tidak gagal lagi
-            - **Fix signature**: release keystore konsisten, tidak bentrok saat update
-            - **Kamera pre-warm**: file foto disiapkan saat app buka → kamera buka instan tanpa jeda
-            - **Popup "⏳ Sedang memproses foto..."**: kasir tahu proses berjalan, layar tidak blank
-            - **Proses foto async (Coroutine IO)**: kompresi foto lebih cepat, UI tidak freeze
+            ### ⚡ Yang Baru di Versi Ini (v1.4.1)
+            - **Tombol Cepat "+ Tandai Struk Cash"**: Di samping tombol revisi setelah jepret foto di scanner, kasir dapat langsung menandai foto sebagai Struk Belanja Cash dengan 1 kali klik.
+            - **Toggle Struk Belanja Cash di Layar Edit**: Detail transaksi menyediakan opsi centang "Struk Belanja Cash (Laci)" beserta input keterangan keperluan belanja.
+            - **Kunci Permanen Signature Resmi Toko**: Keystore release kini terkunci permanen di build pipeline, memastikan sertifikat SHA-256 selalu konsisten dan 100% bebas dari kendala "paket bentrok" pada update-update selanjutnya.
+            - **Pemisahan Kas Fisik vs QRIS**: Struk belanja cash laci toko tidak memotong saldo QRIS bank, tetap terdokumentasi terpisah di rekap harian.
 
             ### 📲 Cara Install di HP Android
             1. Unduh file **`QRISKas-Mobile-${{ steps.prepare.outputs.tag }}.apk`** di bawah

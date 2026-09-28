@@ -1,11 +1,11 @@
 const $=id=>document.getElementById(id);
 const ids=[
   "camera","cameraEmpty","startCamera","toggleCamMode","capture","nativeCamBtn","nativeCamInput","fileInput",
-  "openCashoutBtn","openSurplusBtn","openRevisedBtn","openExpenseBtn","confirmSurplusBadge","confirmCashoutBadge","confirmRevisedBadge","toggleConfirmRevisedBtn","toggleConfirmRevisedText","confirmNoteDisplay",
+  "openCashoutBtn","openSurplusBtn","openRevisedBtn","openExpenseBtn","confirmSurplusBadge","confirmCashoutBadge","confirmRevisedBadge","confirmExpenseBadge","toggleConfirmRevisedBtn","toggleConfirmRevisedText","toggleConfirmExpenseBtn","toggleConfirmExpenseText","confirmNoteDisplay",
   "result","preview","amount","save","manual","manualDialog","manualAmount","manualDate","manualTime",
   "dateTimeFieldGroup","manualSurplusGroup","manualIsSurplus","manualNoteWrap","manualNote",
   "manualCashoutGroup","manualIsCashout","manualCashoutNoteWrap","manualCashoutNote",
-  "manualRevisedGroup","manualIsRevised",
+  "manualRevisedGroup","manualIsRevised","manualExpenseGroup","manualIsExpense","manualExpenseNoteWrap","manualExpenseNote",
   "displayDate","displayTime","applyManual",
   "surplusDialog","surplusAmount","surplusNote","surplusGalleryBtn","surplusGalleryText",
   "surplusFileInput","surplusPreviewWrap","surplusPreviewImg","removeSurplusPhoto","surplusAutoProofNote",
@@ -39,7 +39,7 @@ let currentFacingMode=localStorage.getItem("preferredFacingMode")||"environment"
 let allVideoDevices=[];
 let currentDeviceIndex=0;
 let currentRole="kasir";
-let isSurplusMode=false,isCashoutMode=false,isRevisedMode=false,currentNote="",surplusSelectedBlob=null,cashoutSelectedBlob=null,revisedSelectedBlob=null,expenseSelectedBlob=null;
+let isSurplusMode=false,isCashoutMode=false,isRevisedMode=false,isExpenseMode=false,currentNote="",surplusSelectedBlob=null,cashoutSelectedBlob=null,revisedSelectedBlob=null,expenseSelectedBlob=null;
 
 const rupiah=n=>new Intl.NumberFormat("id-ID").format(n);
 const escapeHtml=s=>String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
@@ -106,6 +106,8 @@ function applySettingsUI(s){
     if(e.manualSurplusGroup) e.manualSurplusGroup.style.display="none";
     if(e.manualCashoutGroup) e.manualCashoutGroup.style.display="none";
     if(e.manualRevisedGroup) e.manualRevisedGroup.style.display="none";
+    if(e.manualExpenseGroup) e.manualExpenseGroup.style.display="none";
+    if(e.toggleConfirmExpenseBtn) e.toggleConfirmExpenseBtn.style.display="none";
     return;
   }
 
@@ -132,6 +134,12 @@ function applySettingsUI(s){
 
   if(e.openExpenseBtn){
     e.openExpenseBtn.style.display=s.expenseEnabled?"flex":"none";
+  }
+  if(e.manualExpenseGroup){
+    e.manualExpenseGroup.style.display=s.expenseEnabled?"block":"none";
+  }
+  if(e.toggleConfirmExpenseBtn){
+    e.toggleConfirmExpenseBtn.style.display=s.expenseEnabled?"inline-flex":"none";
   }
 
   if(e.settingsBtn){
@@ -468,6 +476,12 @@ function openManual(mode="default"){
     e.manualIsRevised.checked=Boolean(isRevisedMode);
   }
 
+  if(e.manualIsExpense){
+    e.manualIsExpense.checked=Boolean(isExpenseMode);
+    if(e.manualExpenseNoteWrap)e.manualExpenseNoteWrap.style.display=isExpenseMode?"block":"none";
+    if(e.manualExpenseNote)e.manualExpenseNote.value=isExpenseMode?currentNote:"";
+  }
+
   e.manualDialog.showModal();
   setTimeout(()=>e.manualAmount.focus(),100);
 }
@@ -478,6 +492,16 @@ function updateRevisedToggleUI(){
     e.toggleConfirmRevisedBtn.classList.toggle("active",Boolean(isRevisedMode));
     if(e.toggleConfirmRevisedText){
       e.toggleConfirmRevisedText.textContent=isRevisedMode?"✓ Berlabel Revisi":"+ Beri Label Revisi";
+    }
+  }
+}
+
+function updateExpenseToggleUI(){
+  if(e.confirmExpenseBadge)e.confirmExpenseBadge.classList.toggle("hidden",!isExpenseMode);
+  if(e.toggleConfirmExpenseBtn){
+    e.toggleConfirmExpenseBtn.classList.toggle("active",Boolean(isExpenseMode));
+    if(e.toggleConfirmExpenseText){
+      e.toggleConfirmExpenseText.textContent=isExpenseMode?"✓ Struk Belanja Cash":"+ Tandai Struk Cash";
     }
   }
 }
@@ -495,8 +519,9 @@ async function useSource(s, source="camera"){
   if(e.confirmSurplusBadge)e.confirmSurplusBadge.classList.toggle("hidden",!isSurplusMode);
   if(e.confirmCashoutBadge)e.confirmCashoutBadge.classList.toggle("hidden",!isCashoutMode);
   updateRevisedToggleUI();
+  updateExpenseToggleUI();
   if(e.confirmNoteDisplay){
-    if((isSurplusMode||isCashoutMode) && currentNote){
+    if((isSurplusMode||isCashoutMode||isExpenseMode) && currentNote){
       e.confirmNoteDisplay.textContent=`Catatan: ${currentNote}`;
       e.confirmNoteDisplay.classList.remove("hidden");
     }else{
@@ -533,12 +558,13 @@ async function save(){
       isSurplus: Boolean(isSurplusMode),
       isCashout: Boolean(isCashoutMode),
       isRevised: Boolean(isRevisedMode),
+      isExpense: Boolean(isExpenseMode),
       note: currentNote,
       customDate: selectedDate,
       customTime: selectedTime,
       imageBlob: imageBlob
     });
-    const line=formatReceiptLine(selectedTime, amount, isSurplusMode, isCashoutMode, isRevisedMode, currentNote);
+    const line=formatReceiptLine(selectedTime, amount, isSurplusMode, isCashoutMode, isRevisedMode, currentNote, isExpenseMode);
     e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
@@ -556,6 +582,7 @@ async function save(){
     fd.append("isSurplus",String(Boolean(isSurplusMode)));
     fd.append("isCashout",String(Boolean(isCashoutMode)));
     fd.append("isRevised",String(Boolean(isRevisedMode)));
+    fd.append("isExpense",String(Boolean(isExpenseMode)));
     if(currentNote) fd.append("note",currentNote);
     if(selectedDate) fd.append("customDate",selectedDate);
     if(selectedTime) fd.append("customTime",selectedTime);
@@ -567,7 +594,7 @@ async function save(){
     }
 
     const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(data.savedAt));
-    const line=formatReceiptLine(time,data.amount,data.isSurplus,data.isCashout,data.isRevised,data.note);
+    const line=formatReceiptLine(time,data.amount,data.isSurplus,data.isCashout,data.isRevised,data.note,data.isExpense);
     e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
@@ -579,12 +606,13 @@ async function save(){
         isSurplus: Boolean(isSurplusMode),
         isCashout: Boolean(isCashoutMode),
         isRevised: Boolean(isRevisedMode),
+        isExpense: Boolean(isExpenseMode),
         note: currentNote,
         customDate: selectedDate,
         customTime: selectedTime,
         imageBlob: imageBlob
       });
-      const line=formatReceiptLine(selectedTime, amount, isSurplusMode, isCashoutMode, isRevisedMode, currentNote);
+      const line=formatReceiptLine(selectedTime, amount, isSurplusMode, isCashoutMode, isRevisedMode, currentNote, isExpenseMode);
       e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
       e.result.classList.add("hidden");
       e.success.classList.remove("hidden");
@@ -601,11 +629,12 @@ function reset(){
   e.result.classList.add("hidden");
   e.success.classList.add("hidden");
   imageBlob=null;amount=0;
-  isSurplusMode=false;isCashoutMode=false;isRevisedMode=false;currentNote="";
-  surplusSelectedBlob=null;cashoutSelectedBlob=null;revisedSelectedBlob=null;
+  isSurplusMode=false;isCashoutMode=false;isRevisedMode=false;isExpenseMode=false;currentNote="";
+  surplusSelectedBlob=null;cashoutSelectedBlob=null;revisedSelectedBlob=null;expenseSelectedBlob=null;
   if(e.confirmSurplusBadge)e.confirmSurplusBadge.classList.add("hidden");
   if(e.confirmCashoutBadge)e.confirmCashoutBadge.classList.add("hidden");
   updateRevisedToggleUI();
+  updateExpenseToggleUI();
   if(e.confirmNoteDisplay)e.confirmNoteDisplay.classList.add("hidden");
   if(e.manualIsSurplus)e.manualIsSurplus.checked=false;
   if(e.manualNoteWrap)e.manualNoteWrap.style.display="none";
@@ -614,6 +643,9 @@ function reset(){
   if(e.manualCashoutNoteWrap)e.manualCashoutNoteWrap.style.display="none";
   if(e.manualCashoutNote)e.manualCashoutNote.value="";
   if(e.manualIsRevised)e.manualIsRevised.checked=false;
+  if(e.manualIsExpense)e.manualIsExpense.checked=false;
+  if(e.manualExpenseNoteWrap)e.manualExpenseNoteWrap.style.display="none";
+  if(e.manualExpenseNote)e.manualExpenseNote.value="";
   window.scrollTo({top:0,behavior:"smooth"});
 }
 
@@ -1906,17 +1938,25 @@ e.applyManual.onclick=x=>{
   if(e.manualTime && e.displayTime)e.displayTime.value=e.manualTime.value;
   if(e.manualDate && e.displayDate)e.displayDate.value=e.manualDate.value;
 
-  if(e.manualIsSurplus && e.manualIsSurplus.checked){
+  if(e.manualIsExpense && e.manualIsExpense.checked){
+    isExpenseMode=true;
+    isSurplusMode=false;
+    isCashoutMode=false;
+    currentNote=(e.manualExpenseNote?.value||"").trim();
+  } else if(e.manualIsSurplus && e.manualIsSurplus.checked){
     isSurplusMode=true;
     isCashoutMode=false;
+    isExpenseMode=false;
     currentNote=(e.manualNote?.value||"").trim();
   } else if(e.manualIsCashout && e.manualIsCashout.checked){
     isCashoutMode=true;
     isSurplusMode=false;
+    isExpenseMode=false;
     currentNote=(e.manualCashoutNote?.value||"").trim();
   } else {
     isSurplusMode=false;
     isCashoutMode=false;
+    isExpenseMode=false;
     currentNote="";
   }
 
@@ -1926,10 +1966,11 @@ e.applyManual.onclick=x=>{
 
   if(e.confirmSurplusBadge)e.confirmSurplusBadge.classList.toggle("hidden",!isSurplusMode);
   if(e.confirmCashoutBadge)e.confirmCashoutBadge.classList.toggle("hidden",!isCashoutMode);
-  if(e.confirmRevisedBadge)e.confirmRevisedBadge.classList.toggle("hidden",!isRevisedMode);
+  updateRevisedToggleUI();
+  updateExpenseToggleUI();
 
   if(e.confirmNoteDisplay){
-    if((isSurplusMode||isCashoutMode) && currentNote){
+    if((isSurplusMode||isCashoutMode||isExpenseMode) && currentNote){
       e.confirmNoteDisplay.textContent=`Catatan: ${currentNote}`;
       e.confirmNoteDisplay.classList.remove("hidden");
     }else{
@@ -1946,6 +1987,10 @@ if(e.manualIsSurplus){
       if(e.manualIsCashout){
         e.manualIsCashout.checked=false;
         if(e.manualCashoutNoteWrap)e.manualCashoutNoteWrap.style.display="none";
+      }
+      if(e.manualIsExpense){
+        e.manualIsExpense.checked=false;
+        if(e.manualExpenseNoteWrap)e.manualExpenseNoteWrap.style.display="none";
       }
       if(e.manualNoteWrap){
         e.manualNoteWrap.style.display="block";
@@ -1964,12 +2009,37 @@ if(e.manualIsCashout){
         e.manualIsSurplus.checked=false;
         if(e.manualNoteWrap)e.manualNoteWrap.style.display="none";
       }
+      if(e.manualIsExpense){
+        e.manualIsExpense.checked=false;
+        if(e.manualExpenseNoteWrap)e.manualExpenseNoteWrap.style.display="none";
+      }
       if(e.manualCashoutNoteWrap){
         e.manualCashoutNoteWrap.style.display="block";
         if(e.manualCashoutNote)setTimeout(()=>e.manualCashoutNote.focus(),100);
       }
     }else{
       if(e.manualCashoutNoteWrap)e.manualCashoutNoteWrap.style.display="none";
+    }
+  };
+}
+
+if(e.manualIsExpense){
+  e.manualIsExpense.onchange=()=>{
+    if(e.manualIsExpense.checked){
+      if(e.manualIsSurplus){
+        e.manualIsSurplus.checked=false;
+        if(e.manualNoteWrap)e.manualNoteWrap.style.display="none";
+      }
+      if(e.manualIsCashout){
+        e.manualIsCashout.checked=false;
+        if(e.manualCashoutNoteWrap)e.manualCashoutNoteWrap.style.display="none";
+      }
+      if(e.manualExpenseNoteWrap){
+        e.manualExpenseNoteWrap.style.display="block";
+        if(e.manualExpenseNote)setTimeout(()=>e.manualExpenseNote.focus(),100);
+      }
+    }else{
+      if(e.manualExpenseNoteWrap)e.manualExpenseNoteWrap.style.display="none";
     }
   };
 }
@@ -2167,6 +2237,25 @@ if(e.toggleConfirmRevisedBtn){
     if(e.manualIsRevised) e.manualIsRevised.checked=isRevisedMode;
     updateRevisedToggleUI();
     toast(isRevisedMode?"Label Revisi diaktifkan":"Label Revisi dinonaktifkan");
+  };
+}
+
+if(e.toggleConfirmExpenseBtn){
+  e.toggleConfirmExpenseBtn.onclick=()=>{
+    isExpenseMode=!isExpenseMode;
+    if(isExpenseMode){
+      isSurplusMode=false;
+      isCashoutMode=false;
+      if(e.confirmSurplusBadge)e.confirmSurplusBadge.classList.add("hidden");
+      if(e.confirmCashoutBadge)e.confirmCashoutBadge.classList.add("hidden");
+      if(e.manualIsSurplus)e.manualIsSurplus.checked=false;
+      if(e.manualIsCashout)e.manualIsCashout.checked=false;
+      if(e.manualIsExpense)e.manualIsExpense.checked=true;
+    }else{
+      if(e.manualIsExpense)e.manualIsExpense.checked=false;
+    }
+    updateExpenseToggleUI();
+    toast(isExpenseMode?"Ditandai sebagai Struk Belanja Cash (Laci)":"Mode Struk Cash dinonaktifkan (QRIS)");
   };
 }
 

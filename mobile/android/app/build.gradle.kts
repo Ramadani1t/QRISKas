@@ -13,27 +13,29 @@ android {
         applicationId = "id.qriskas.mobile"
         minSdk = 26
         targetSdk = 33
-        versionCode = 4
-        versionName = "1.4.0"
+        versionCode = 5
+        versionName = "1.4.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    val keystorePath = System.getenv("KEYSTORE_PATH")
-    val storePass = System.getenv("RELEASE_STORE_PASSWORD")
-    val keyAliasEnv = System.getenv("RELEASE_KEY_ALIAS")
-    val keyPass = System.getenv("RELEASE_KEY_PASSWORD")
+    val bundledKeystore = File(projectDir, "qriskas-release.jks")
+    val keystorePathEnv = System.getenv("KEYSTORE_PATH")
+    val actualKeystoreFile: File? = when {
+        !keystorePathEnv.isNullOrBlank() && File(keystorePathEnv).exists() && File(keystorePathEnv).length() > 0 -> File(keystorePathEnv)
+        bundledKeystore.exists() && bundledKeystore.length() > 0 -> bundledKeystore
+        else -> null
+    }
 
-    val isReleaseSigningReady = !keystorePath.isNullOrBlank() &&
-            File(keystorePath).exists() &&
-            File(keystorePath).length() > 0 &&
-            !storePass.isNullOrBlank() &&
-            !keyAliasEnv.isNullOrBlank() &&
-            !keyPass.isNullOrBlank()
+    val storePass = System.getenv("RELEASE_STORE_PASSWORD")?.ifBlank { null } ?: "qriskas2026"
+    val keyAliasEnv = System.getenv("RELEASE_KEY_ALIAS")?.ifBlank { null } ?: "qriskas"
+    val keyPass = System.getenv("RELEASE_KEY_PASSWORD")?.ifBlank { null } ?: "qriskas2026"
+
+    val isReleaseSigningReady = actualKeystoreFile != null
 
     signingConfigs {
         if (isReleaseSigningReady) {
             create("release") {
-                storeFile = File(keystorePath!!)
+                storeFile = actualKeystoreFile
                 storePassword = storePass
                 keyAlias = keyAliasEnv
                 keyPassword = keyPass
@@ -49,11 +51,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Pakai release signingConfig jika ready, fallback ke debug resmi jika belum
-            signingConfig = if (isReleaseSigningReady) {
-                signingConfigs.getByName("release")
+            // Wajib menggunakan release signingConfig permanen agar signature APK tidak bentrok saat update
+            if (isReleaseSigningReady) {
+                signingConfig = signingConfigs.getByName("release")
             } else {
-                signingConfigs.getByName("debug")
+                throw GradleException("Release keystore 'qriskas-release.jks' tidak ditemukan! Dilarang build release tanpa tanda tangan resmi agar tidak bentrok paket.")
             }
         }
         debug {
