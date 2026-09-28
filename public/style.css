@@ -50,3 +50,14 @@
 
 #settingsBtn{position:relative}
 #settingsBtn.has-update::after{content:'';position:absolute;top:5px;right:5px;width:7px;height:7px;background:#ffd000;border-radius:50%;box-shadow:0 0 8px #ffd000}
+
+.expense-trigger-btn{position:relative;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#24080e 0%,#150408 100%);color:#f43f5e;border:1px solid rgba(244,63,94,0.45);min-height:50px;font-size:14px;font-weight:800;border-radius:16px;cursor:pointer;box-shadow:0 4px 18px rgba(244,63,94,0.12);transition:all .15s ease}
+.expense-trigger-btn:hover,.expense-trigger-btn:active{background:#360c16;border-color:#f43f5e;box-shadow:0 6px 22px rgba(244,63,94,0.25)}
+.expense-badge-chip{background:#f43f5e;color:#fff;font-size:10px;font-weight:900;padding:2px 7px;border-radius:10px;margin-left:4px;letter-spacing:0.04em;text-transform:uppercase}
+.expense-modal-header{display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.expense-modal-icon{width:40px;height:40px;display:grid;place-items:center;border-radius:12px;background:rgba(244,63,94,0.15);border:1px solid rgba(244,63,94,0.35);color:#f43f5e;flex-shrink:0}
+.expense-gallery-label{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;gap:8px;text-align:center;color:#f43f5e;background:rgba(244,63,94,0.08);border:1px dashed #e11d48;border-radius:14px;font-size:13px;font-weight:700;padding:14px;cursor:pointer;transition:background .2s ease,border-color .2s ease}
+.expense-gallery-label:hover,.expense-gallery-label:active{background:rgba(244,63,94,0.16);border-color:#f43f5e}
+.expense-gallery-label input[type="file"]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.expense-preview-wrap{margin-top:10px;position:relative;border:1px solid var(--line);border-radius:14px;padding:8px;background:#060502;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.expense-preview-wrap img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}

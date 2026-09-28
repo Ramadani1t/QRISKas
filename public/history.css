@@ -65,6 +65,16 @@
   color: #38bdf8;
 }
 
+.history-item.is-expense {
+  border-color: rgba(244, 63, 94, 0.45);
+  background: linear-gradient(145deg, #240a12 0%, #140509 100%);
+  box-shadow: 0 4px 16px rgba(244, 63, 94, 0.15);
+}
+
+.history-item.is-expense .history-item-amount {
+  color: #f43f5e;
+}
+
 .history-item-thumb {
   width: 52px;
   height: 52px;
@@ -156,6 +166,22 @@
   border-radius: 6px;
   line-height: 1.2;
   box-shadow: 0 2px 8px rgba(192, 132, 252, 0.35);
+  white-space: nowrap;
+}
+
+.badge-expense {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
+  color: #ffffff;
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 6px;
+  line-height: 1.2;
+  box-shadow: 0 2px 8px rgba(244, 63, 94, 0.35);
   white-space: nowrap;
 }
 

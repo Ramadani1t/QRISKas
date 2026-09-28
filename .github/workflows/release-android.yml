@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag (e.g. v1.3.0)'
+        description: 'Release tag (e.g. v1.4.0)'
         required: true
-        default: 'v1.3.0'
+        default: 'v1.4.0'
 
 jobs:
   build-and-release:
@@ -116,7 +116,9 @@ jobs:
 
             ---
 
-            ### ⚡ Yang Baru di Versi Ini
+            ### ⚡ Yang Baru di Versi Ini (v1.4.0)
+            - **Fitur Dokumentasi Struk Belanja Cash (Laci Fisik)**: Kasir dapat mencatat pengeluaran uang cash fisik/laci toko (beli es batu, gas, kresek, dsb.) lengkap dengan foto nota dan kartu bukti digital tanpa memotong saldo QRIS bank.
+            - **Uji Coba Signature Update**: Memastikan in-app update dari v1.3.0 ke v1.4.0 terpasang mulus tanpa bentrok signature.
             - **Fix update APK**: download ke public Downloads, install tidak gagal lagi
             - **Fix signature**: release keystore konsisten, tidak bentrok saat update
             - **Kamera pre-warm**: file foto disiapkan saat app buka → kamera buka instan tanpa jeda

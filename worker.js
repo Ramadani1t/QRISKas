@@ -182,7 +182,7 @@ export default {
       if (role !== "admin") return json({ error: "Akses ditolak." }, 403);
       try {
         if (!env.DELETE_PIN || request.headers.get("x-delete-pin") !== env.DELETE_PIN) return json({ error: "PIN salah." }, 401);
-        const { recordKey, newAmount, newDate, newTime, newNote, newIsSurplus, newIsCashout, newIsRevised } = await request.json();
+        const { recordKey, newAmount, newDate, newTime, newNote, newIsSurplus, newIsCashout, newIsRevised, newIsExpense } = await request.json();
         if (typeof recordKey !== "string") return json({ error: "Record key tidak valid." }, 400);
         const stored = await env.RECEIPTS.get(recordKey);
         if (!stored) return json({ error: "Transaksi tidak ditemukan." }, 404);
@@ -237,6 +237,9 @@ export default {
         if (newIsRevised !== undefined) {
           record.isRevised = Boolean(newIsRevised);
         }
+        if (newIsExpense !== undefined) {
+          record.isExpense = Boolean(newIsExpense);
+        }
 
         const [targetYear, targetMonth, targetDay] = datePart.split("-");
         const expectedPrefix = `records/${targetYear}/${targetMonth}/${targetDay}/`;
@@ -282,6 +285,7 @@ export default {
         const isSurplus = form.get("isSurplus") === "true" || form.get("type") === "surplus";
         const isCashout = form.get("isCashout") === "true" || form.get("type") === "cashout";
         const isRevised = form.get("isRevised") === "true" || form.get("isRevision") === "true";
+        const isExpense = form.get("isExpense") === "true" || form.get("type") === "expense";
         const note = form.get("note") ? String(form.get("note")).trim().slice(0, 250) : "";
         
         if (!(image instanceof File) || !image.type.startsWith("image/")) return json({ error: "Foto tidak valid." }, 400);
@@ -316,17 +320,17 @@ export default {
 
         const savedAt = `${targetYear}-${targetMonth}-${targetDay}T${targetHour}:${targetMinute}:${targetSecond}+07:00`;
         const id = crypto.randomUUID().slice(0, 8);
-        const prefixFlag = isSurplus ? "surplus" : (isCashout ? "cashout" : "regular");
+        const prefixFlag = isExpense ? "expense" : (isSurplus ? "surplus" : (isCashout ? "cashout" : "regular"));
         const base = `${targetYear}/${targetMonth}/${targetDay}/${targetHour}${targetMinute}${targetSecond}-${amount}-${prefixFlag}-${id}`;
         const imageKey = `images/${base}.jpg`;
         const recordKey = `records/${base}.json`;
 
-        const recordData = { amount, savedAt, imageKey, isSurplus, isCashout, isRevised, note };
+        const recordData = { amount, savedAt, imageKey, isSurplus, isCashout, isRevised, isExpense, note };
 
         await Promise.all([
           env.RECEIPTS.put(imageKey, image.stream(), {
             httpMetadata: { contentType: "image/jpeg", cacheControl: "public, max-age=31536000, immutable" },
-            customMetadata: { amount: String(amount), savedAt, isSurplus: String(isSurplus), isCashout: String(isCashout), isRevised: String(isRevised), note }
+            customMetadata: { amount: String(amount), savedAt, isSurplus: String(isSurplus), isCashout: String(isCashout), isRevised: String(isRevised), isExpense: String(isExpense), note }
           }),
           env.RECEIPTS.put(recordKey, JSON.stringify(recordData), {
             httpMetadata: { contentType: "application/json" }
@@ -334,7 +338,7 @@ export default {
         ]);
         const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
         if (!publicBase || publicBase.includes("example.com")) return json({ error: "R2_PUBLIC_URL belum diatur.", saved: true }, 500);
-        return json({ amount, savedAt, isSurplus, isCashout, isRevised, note, imageUrl: `${publicBase}/${imageKey}` });
+        return json({ amount, savedAt, isSurplus, isCashout, isRevised, isExpense, note, imageUrl: `${publicBase}/${imageKey}` });
       } catch (error) {
         return json({ error: "Gagal menyimpan bukti. Coba lagi.", detail: error.message }, 500);
       }

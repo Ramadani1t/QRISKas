@@ -1,7 +1,7 @@
 const $=id=>document.getElementById(id);
 const ids=[
   "camera","cameraEmpty","startCamera","toggleCamMode","capture","nativeCamBtn","nativeCamInput","fileInput",
-  "openCashoutBtn","openSurplusBtn","openRevisedBtn","confirmSurplusBadge","confirmCashoutBadge","confirmRevisedBadge","toggleConfirmRevisedBtn","toggleConfirmRevisedText","confirmNoteDisplay",
+  "openCashoutBtn","openSurplusBtn","openRevisedBtn","openExpenseBtn","confirmSurplusBadge","confirmCashoutBadge","confirmRevisedBadge","toggleConfirmRevisedBtn","toggleConfirmRevisedText","confirmNoteDisplay",
   "result","preview","amount","save","manual","manualDialog","manualAmount","manualDate","manualTime",
   "dateTimeFieldGroup","manualSurplusGroup","manualIsSurplus","manualNoteWrap","manualNote",
   "manualCashoutGroup","manualIsCashout","manualCashoutNoteWrap","manualCashoutNote",
@@ -16,15 +16,19 @@ const ids=[
   "revisedDialog","revisedAmount","revisedNote","revisedGalleryBtn","revisedGalleryText",
   "revisedFileInput","revisedPreviewWrap","revisedPreviewImg","removeRevisedPhoto","revisedAutoProofNote",
   "revisedDate","revisedTime","saveRevisedBtn",
+  "expenseDialog","expenseAmount","expenseNote","expenseGalleryBtn","expenseGalleryText",
+  "expenseFileInput","expensePreviewWrap","expensePreviewImg","removeExpensePhoto","expenseAutoProofNote",
+  "expenseDate","expenseTime","saveExpenseBtn",
   "rescan","canvas","success","shareText","share","copy","again","toast",
   "scanTab","historyTab","scanPage","historyPage","historyDate","historyLoading",
-  "historyEmpty","historyList","recapBox","recapSalesRow","recapSalesTotal","recapSurplusRow","recapSurplusTotal","recapCashoutRow","recapCashoutTotal","recapRevisedRow","recapRevisedCount","recapDivider","historyTotal","shareRecap","copyRecap",
+  "historyEmpty","historyList","recapBox","recapSalesRow","recapSalesTotal","recapSurplusRow","recapSurplusTotal","recapCashoutRow","recapCashoutTotal","recapRevisedRow","recapRevisedCount","recapDivider","historyTotal",
+  "recapExpenseSection","recapExpenseCount","recapExpenseTotal","shareRecap","copyRecap",
   "groupedTransactions","groupedList","groupedSummaryBadge","groupedCopyBtn",
-  "editDialog","editAmount","editDate","editTime","editIsSurplus","editNoteWrap","editNote","editIsCashout","editIsRevised","editPinInput","saveEditBtn",
+  "editDialog","editAmount","editDate","editTime","editIsSurplus","editNoteWrap","editNote","editIsCashout","editIsRevised","editIsExpense","editPinInput","saveEditBtn",
   "deleteDialog","deleteConfirmInfo","deletePinInput","deletePasswordInput","confirmDeleteBtn",
   "externalShortcut","settingsBtn","settingsDialog","settingDefaultCam","settingNativeCamMode","customPackageFields",
   "settingCustomPackage","settingShortcutEnabled","settingShortcutLabel","settingShortcutUrl","shortcutFields",
-  "settingSurplusEnabled","settingCashoutEnabled","settingRevisionEnabled","settingGroupedEnabled","settingRetentionDays","cleanNowBtn","saveSettingsBtn",
+  "settingSurplusEnabled","settingCashoutEnabled","settingRevisionEnabled","settingExpenseEnabled","settingGroupedEnabled","settingRetentionDays","cleanNowBtn","saveSettingsBtn",
   "mobileAppUpdateSection","mobileCurrentVersionBadge","mobileUpdateHelpText","checkMobileUpdateBtn","checkMobileUpdateBtnText",
   "mobileUpdateVerifyBox","mobileUpdateTargetTag","mobileUpdateSizeInfo","mobileUpdateChangelog","executeMobileUpdateBtn","dismissMobileUpdateBtn"
 ];
@@ -35,13 +39,15 @@ let currentFacingMode=localStorage.getItem("preferredFacingMode")||"environment"
 let allVideoDevices=[];
 let currentDeviceIndex=0;
 let currentRole="kasir";
-let isSurplusMode=false,isCashoutMode=false,isRevisedMode=false,currentNote="",surplusSelectedBlob=null,cashoutSelectedBlob=null,revisedSelectedBlob=null;
+let isSurplusMode=false,isCashoutMode=false,isRevisedMode=false,currentNote="",surplusSelectedBlob=null,cashoutSelectedBlob=null,revisedSelectedBlob=null,expenseSelectedBlob=null;
 
 const rupiah=n=>new Intl.NumberFormat("id-ID").format(n);
 const escapeHtml=s=>String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
-const formatReceiptLine=(time,amt,isSurplus,isCashout,isRevised,note)=>{
+const formatReceiptLine=(time,amt,isSurplus,isCashout,isRevised,note,isExpense)=>{
   const tags=[];
-  if(isSurplus){
+  if(isExpense){
+    tags.push(note?`Struk Cash: ${note}`:"Struk Cash");
+  }else if(isSurplus){
     tags.push(note?`Surplus: ${note}`:"Surplus");
   }else if(isCashout){
     tags.push(note?`Tukar Cash: ${note}`:"Tukar Cash");
@@ -72,7 +78,8 @@ function loadSettings(){
   const surplusEnabled=localStorage.getItem("surplusEnabled")!=="false";
   const cashoutEnabled=localStorage.getItem("cashoutEnabled")!=="false";
   const revisionEnabled=localStorage.getItem("revisionEnabled")!=="false";
-  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled};
+  const expenseEnabled=localStorage.getItem("expenseEnabled")!=="false";
+  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled,expenseEnabled};
 }
 
 function applySettingsUI(s){
@@ -95,6 +102,7 @@ function applySettingsUI(s){
     if(e.openSurplusBtn) e.openSurplusBtn.style.display="none";
     if(e.openCashoutBtn) e.openCashoutBtn.style.display="none";
     if(e.openRevisedBtn) e.openRevisedBtn.style.display="none";
+    if(e.openExpenseBtn) e.openExpenseBtn.style.display="none";
     if(e.manualSurplusGroup) e.manualSurplusGroup.style.display="none";
     if(e.manualCashoutGroup) e.manualCashoutGroup.style.display="none";
     if(e.manualRevisedGroup) e.manualRevisedGroup.style.display="none";
@@ -120,6 +128,10 @@ function applySettingsUI(s){
   }
   if(e.manualRevisedGroup){
     e.manualRevisedGroup.style.display=s.revisionEnabled?"block":"none";
+  }
+
+  if(e.openExpenseBtn){
+    e.openExpenseBtn.style.display=s.expenseEnabled?"flex":"none";
   }
 
   if(e.settingsBtn){
@@ -153,6 +165,7 @@ async function openSettingsModal(){
   if(e.settingSurplusEnabled)e.settingSurplusEnabled.checked=s.surplusEnabled;
   if(e.settingCashoutEnabled)e.settingCashoutEnabled.checked=s.cashoutEnabled;
   if(e.settingRevisionEnabled)e.settingRevisionEnabled.checked=s.revisionEnabled;
+  if(e.settingExpenseEnabled)e.settingExpenseEnabled.checked=s.expenseEnabled;
   if(e.settingGroupedEnabled)e.settingGroupedEnabled.checked=s.groupedEnabled;
 
   try{
@@ -195,6 +208,7 @@ async function saveSettings(ev){
   const surplusEnabled=e.settingSurplusEnabled?e.settingSurplusEnabled.checked:true;
   const cashoutEnabled=e.settingCashoutEnabled?e.settingCashoutEnabled.checked:true;
   const revisionEnabled=e.settingRevisionEnabled?e.settingRevisionEnabled.checked:true;
+  const expenseEnabled=e.settingExpenseEnabled?e.settingExpenseEnabled.checked:true;
   const groupedEnabled=e.settingGroupedEnabled?e.settingGroupedEnabled.checked:true;
   const retentionDays=Number(e.settingRetentionDays?.value||30);
 
@@ -216,9 +230,10 @@ async function saveSettings(ev){
   localStorage.setItem("surplusEnabled",String(surplusEnabled));
   localStorage.setItem("cashoutEnabled",String(cashoutEnabled));
   localStorage.setItem("revisionEnabled",String(revisionEnabled));
+  localStorage.setItem("expenseEnabled",String(expenseEnabled));
   localStorage.setItem("groupedEnabled",String(groupedEnabled));
 
-  applySettingsUI({facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled});
+  applySettingsUI({facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled,expenseEnabled});
   if(e.settingsDialog)e.settingsDialog.close();
   toast("Pengaturan disimpan");
 
@@ -1207,6 +1222,210 @@ async function saveRevised(ev){
   }
 }
 
+async function generateExpenseProofImage(nominal,note,dateStr,timeStr){
+  const c=document.createElement("canvas");
+  c.width=800;c.height=600;
+  const ctx=c.getContext("2d");
+  const grad=ctx.createLinearGradient(0,0,800,600);
+  grad.addColorStop(0,"#1c070c");
+  grad.addColorStop(1,"#090204");
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,800,600);
+
+  ctx.strokeStyle="#f43f5e";
+  ctx.lineWidth=6;
+  ctx.strokeRect(16,16,768,568);
+
+  ctx.strokeStyle="#4a1523";
+  ctx.lineWidth=2;
+  ctx.strokeRect(26,26,748,548);
+
+  ctx.fillStyle="#ffd000";
+  ctx.font="bold 22px system-ui,sans-serif";
+  ctx.textAlign="center";
+  ctx.fillText("TAHUNYA KRISPIYA • QRIS KAS",400,75);
+
+  ctx.fillStyle="rgba(244,63,94,0.18)";
+  ctx.fillRect(160,95,480,36);
+  ctx.strokeStyle="#f43f5e";
+  ctx.lineWidth=1.5;
+  ctx.strokeRect(160,95,480,36);
+
+  ctx.fillStyle="#f43f5e";
+  ctx.font="bold 14px system-ui,sans-serif";
+  ctx.fillText("BUKTI STRUK BELANJA CASH (LACI FISIK)",400,119);
+
+  ctx.fillStyle="#a89f82";
+  ctx.font="14px system-ui,sans-serif";
+  ctx.fillText("NOMINAL PENGELUARAN CASH FISIK",400,180);
+
+  ctx.fillStyle="#ffffff";
+  ctx.font="900 58px system-ui,sans-serif";
+  ctx.fillText(`Rp${rupiah(nominal)}`,400,245);
+
+  ctx.fillStyle="#140609";
+  ctx.fillRect(70,285,660,200);
+  ctx.strokeStyle="#4a1523";
+  ctx.lineWidth=1.5;
+  ctx.strokeRect(70,285,660,200);
+
+  ctx.textAlign="left";
+  ctx.fillStyle="#a89f82";
+  ctx.font="bold 14px system-ui,sans-serif";
+  ctx.fillText("WAKTU PENGELUARAN",100,325);
+  ctx.fillStyle="#fffef5";
+  ctx.font="16px system-ui,sans-serif";
+  ctx.fillText(`${dateStr} • ${timeStr} WIB`,100,350);
+
+  ctx.fillStyle="#a89f82";
+  ctx.font="bold 14px system-ui,sans-serif";
+  ctx.fillText("RINCIAN / KETERANGAN BELANJA",100,395);
+  ctx.fillStyle="#fda4af";
+  ctx.font="italic 16px system-ui,sans-serif";
+  const noteText=note||"Biaya belanja/pengeluaran uang laci fisik kasir";
+  ctx.fillText(noteText.length>55?noteText.slice(0,52)+"...":noteText,100,422);
+
+  ctx.textAlign="center";
+  ctx.fillStyle="#a89f82";
+  ctx.font="12px system-ui,sans-serif";
+  ctx.fillText("Dokumentasi Kas Keluar Fisik Laci Toko • Tidak Mengurangi Saldo QRIS Bank",400,535);
+
+  return await canvasBlob(c,0.85);
+}
+
+function openExpenseModal(){
+  if(e.expenseAmount)e.expenseAmount.value="";
+  if(e.expenseNote)e.expenseNote.value="";
+  if(e.expenseDate)e.expenseDate.value=localDate();
+  if(e.expenseTime)e.expenseTime.value=currentJakartaTime();
+  expenseSelectedBlob=null;
+  if(e.expensePreviewWrap)e.expensePreviewWrap.classList.add("hidden");
+  if(e.expensePreviewImg)e.expensePreviewImg.src="";
+  if(e.expenseGalleryText)e.expenseGalleryText.textContent="Pilih Foto Nota dari Galeri";
+  if(e.expenseFileInput)e.expenseFileInput.value="";
+  if(e.expenseDialog){
+    e.expenseDialog.showModal();
+    setTimeout(()=>e.expenseAmount?.focus(),100);
+  }
+}
+
+async function saveExpense(ev){
+  ev.preventDefault();
+  const expAmount=Number(e.expenseAmount.value.replace(/\D/g,""));
+  if(!expAmount)return toast("Masukkan nominal pengeluaran yang benar");
+
+  const expNote=(e.expenseNote.value||"").trim();
+  if(!expNote)return toast("Keterangan belanja wajib diisi!");
+
+  const expDate=e.expenseDate.value||localDate();
+  const expTime=e.expenseTime.value||currentJakartaTime();
+
+  if(e.saveExpenseBtn){
+    e.saveExpenseBtn.disabled=true;
+    e.saveExpenseBtn.textContent="Menyimpan…";
+  }
+
+  // Jika sedang offline
+  if(!navigator.onLine){
+    let finalBlob=expenseSelectedBlob;
+    if(!finalBlob){
+      finalBlob=await generateExpenseProofImage(expAmount,expNote,expDate,expTime);
+    }
+    await queueOfflineReceipt({
+      amount: String(expAmount),
+      isSurplus: false,
+      isCashout: false,
+      isRevised: false,
+      isExpense: true,
+      note: expNote,
+      customDate: expDate,
+      customTime: expTime,
+      imageBlob: finalBlob
+    });
+    const line=formatReceiptLine(expTime,expAmount,false,false,false,expNote,true);
+    e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
+    if(e.expenseDialog)e.expenseDialog.close();
+    e.result.classList.add("hidden");
+    e.success.classList.remove("hidden");
+    e.success.scrollIntoView({behavior:"smooth"});
+    toast("Struk cash tersimpan di antrean offline!");
+    if(e.saveExpenseBtn){
+      e.saveExpenseBtn.disabled=false;
+      e.saveExpenseBtn.textContent="Simpan Struk Cash";
+    }
+    return;
+  }
+
+  try{
+    let finalBlob=expenseSelectedBlob;
+    if(!finalBlob){
+      finalBlob=await generateExpenseProofImage(expAmount,expNote,expDate,expTime);
+    }
+
+    const fd=new FormData();
+    fd.append("image",finalBlob,"nota-belanja.jpg");
+    fd.append("amount",String(expAmount));
+    fd.append("customDate",expDate);
+    fd.append("customTime",expTime);
+    fd.append("isExpense","true");
+    fd.append("note",expNote);
+
+    const response=await fetch("/api/receipts",{method:"POST",body:fd});
+    const data=await response.json();
+    if(!response.ok){
+      throw new Error(data.error);
+    }
+
+    const time=new Intl.DateTimeFormat("en-GB",{
+      timeZone:"Asia/Jakarta",
+      hour:"2-digit",
+      minute:"2-digit",
+      hourCycle:"h23"
+    }).format(new Date(data.savedAt));
+
+    const line=formatReceiptLine(time,data.amount,false,false,false,data.note,true);
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    if(e.expenseDialog)e.expenseDialog.close();
+
+    e.result.classList.add("hidden");
+    e.success.classList.remove("hidden");
+    e.success.scrollIntoView({behavior:"smooth"});
+    toast("Struk belanja cash berhasil dicatat!");
+  }catch(err){
+    if(!navigator.onLine || err.message?.includes("fetch") || err.message?.includes("NetworkError")){
+      let finalBlob=expenseSelectedBlob;
+      if(!finalBlob){
+        finalBlob=await generateExpenseProofImage(expAmount,expNote,expDate,expTime);
+      }
+      await queueOfflineReceipt({
+        amount: String(expAmount),
+        isSurplus: false,
+        isCashout: false,
+        isRevised: false,
+        isExpense: true,
+        note: expNote,
+        customDate: expDate,
+        customTime: expTime,
+        imageBlob: finalBlob
+      });
+      const line=formatReceiptLine(expTime,expAmount,false,false,false,expNote,true);
+      e.shareText.textContent=`${line} (Tersimpan Offline - Menunggu Sinkronisasi)`;
+      if(e.expenseDialog)e.expenseDialog.close();
+      e.result.classList.add("hidden");
+      e.success.classList.remove("hidden");
+      e.success.scrollIntoView({behavior:"smooth"});
+      toast("Struk cash tersimpan di antrean offline!");
+    } else {
+      toast(err.message||"Gagal menyimpan struk cash");
+    }
+  }finally{
+    if(e.saveExpenseBtn){
+      e.saveExpenseBtn.disabled=false;
+      e.saveExpenseBtn.textContent="Simpan Struk Cash";
+    }
+  }
+}
+
 function showPage(page){
   const h=page==="history";
   e.scanPage.classList.toggle("hidden",h);
@@ -1248,6 +1467,7 @@ function openEditRecord(record){
   if(e.editIsSurplus)e.editIsSurplus.checked=Boolean(record.isSurplus);
   if(e.editIsCashout)e.editIsCashout.checked=Boolean(record.isCashout);
   if(e.editIsRevised)e.editIsRevised.checked=Boolean(record.isRevised);
+  if(e.editIsExpense)e.editIsExpense.checked=Boolean(record.isExpense);
   if(e.editNote)e.editNote.value=record.note||"";
   
   if(e.editPinInput)e.editPinInput.value=sessionStorage.getItem("deletePin")||"";
@@ -1266,6 +1486,7 @@ async function handleSaveEdit(ev){
   const newIsSurplus=e.editIsSurplus?e.editIsSurplus.checked:false;
   const newIsCashout=e.editIsCashout?e.editIsCashout.checked:false;
   const newIsRevised=e.editIsRevised?e.editIsRevised.checked:false;
+  const newIsExpense=e.editIsExpense?e.editIsExpense.checked:false;
   const newNote=(e.editNote?.value||"").trim();
   const pin=(e.editPinInput?.value||"").trim();
   if(!pin)return toast("PIN 6-digit wajib diisi");
@@ -1282,7 +1503,7 @@ async function handleSaveEdit(ev){
       body:JSON.stringify({
         recordKey:pendingEditRecord.recordKey,
         newAmount,newDate,newTime,
-        newIsSurplus,newIsCashout,newIsRevised,
+        newIsSurplus,newIsCashout,newIsRevised,newIsExpense,
         newNote
       })
     });
@@ -1390,42 +1611,57 @@ async function loadHistory(init=false){
 
     // Hitung total dan kelompokkan transaksi dengan nominal yang sama
     const groupMap=new Map();
-    let total=0, salesTotal=0, surplusTotal=0, cashoutTotal=0, revisedCount=0;
-    const lines=[],links=[];
+    let total=0, salesTotal=0, surplusTotal=0, cashoutTotal=0, revisedCount=0, expenseTotal=0, expenseCount=0;
+    const lines=[],links=[],expenseLines=[],expenseLinks=[];
     for(const [index,r] of data.records.entries()){
-      total+=r.amount;
       const isSurplus=Boolean(r.isSurplus);
       const isCashout=Boolean(r.isCashout);
       const isRevised=Boolean(r.isRevised);
-      if(isSurplus){
-        surplusTotal+=r.amount;
-      }else if(isCashout){
-        cashoutTotal+=r.amount;
+      const isExpense=Boolean(r.isExpense);
+
+      if(isExpense){
+        expenseTotal+=r.amount;
+        expenseCount++;
       }else{
-        salesTotal+=r.amount;
+        total+=r.amount;
+        if(isSurplus){
+          surplusTotal+=r.amount;
+        }else if(isCashout){
+          cashoutTotal+=r.amount;
+        }else{
+          salesTotal+=r.amount;
+        }
       }
+
       if(isRevised){
         revisedCount++;
       }
 
       const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(r.savedAt));
-      const line=formatReceiptLine(time,r.amount,isSurplus,isCashout,isRevised,r.note);
-      lines.push(`${index+1}. ${line}`);
-      links.push(`${index+1}. ${r.imageUrl}`);
+      const line=formatReceiptLine(time,r.amount,isSurplus,isCashout,isRevised,r.note,isExpense);
 
-      if(!isSurplus && !isCashout){
-        if(!groupMap.has(r.amount)){
-          groupMap.set(r.amount,{amount:r.amount,count:0,total:0,times:[]});
+      if(isExpense){
+        expenseLines.push(`• [CASH] ${line}`);
+        expenseLinks.push(`• Nota Cash: ${r.imageUrl}`);
+      }else{
+        lines.push(`${lines.length+1}. ${line}`);
+        links.push(`${links.length+1}. ${r.imageUrl}`);
+
+        if(!isSurplus && !isCashout){
+          if(!groupMap.has(r.amount)){
+            groupMap.set(r.amount,{amount:r.amount,count:0,total:0,times:[]});
+          }
+          const g=groupMap.get(r.amount);
+          g.count++;
+          g.total+=r.amount;
+          g.times.push(time);
         }
-        const g=groupMap.get(r.amount);
-        g.count++;
-        g.total+=r.amount;
-        g.times.push(time);
       }
 
       const item=document.createElement("article");
-      item.className=`history-item${isSurplus?" is-surplus":""}${isCashout?" is-cashout":""}${isRevised?" is-revised":""}`;
+      item.className=`history-item${isExpense?" is-expense":""}${isSurplus?" is-surplus":""}${isCashout?" is-cashout":""}${isRevised?" is-revised":""}`;
       
+      const expenseBadgeHtml=isExpense?`<span class="badge-expense"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg><span>STRUK CASH</span></span>`:"";
       const surplusBadgeHtml=isSurplus?`<span class="badge-surplus"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><span>SURPLUS</span></span>`:"";
       const cashoutBadgeHtml=isCashout?`<span class="badge-cashout"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg><span>TUKAR CASH</span></span>`:"";
       const revisedBadgeHtml=isRevised?`<span class="badge-revised"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg><span>REVISI</span></span>`:"";
@@ -1434,7 +1670,7 @@ async function loadHistory(init=false){
       const noteHtml=r.note?`<div class="history-item-note" title="${safeNote}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><span>${safeNote}</span></div>`:"";
       const adminActionsHtml=data.role==="admin"?`<button class="edit-record" type="button" aria-label="Edit transaksi">Edit</button><button class="delete-record" type="button" aria-label="Hapus transaksi">Hapus</button>`:"";
 
-      item.innerHTML=`<img class="history-item-thumb" src="${r.imageUrl}" alt="Bukti ${isSurplus?"Surplus":isCashout?"Tukar Cash":"QRIS"}" loading="lazy"><div class="history-item-body"><div class="history-item-header"><div class="history-item-meta"><time class="history-item-time">${time} WIB</time>${surplusBadgeHtml}${cashoutBadgeHtml}${revisedBadgeHtml}</div><div class="history-item-actions"><button class="copy-record" type="button" title="Salin transaksi ini">Salin</button>${adminActionsHtml}</div></div><strong class="history-item-amount">Rp${rupiah(r.amount)}</strong>${noteHtml}<a class="history-item-link" href="${r.imageUrl}" target="_blank" rel="noopener"><span>Lihat foto bukti</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></div>`;
+      item.innerHTML=`<img class="history-item-thumb" src="${r.imageUrl}" alt="Bukti ${isExpense?"Struk Belanja Cash":isSurplus?"Surplus":isCashout?"Tukar Cash":"QRIS"}" loading="lazy"><div class="history-item-body"><div class="history-item-header"><div class="history-item-meta"><time class="history-item-time">${time} WIB</time>${expenseBadgeHtml}${surplusBadgeHtml}${cashoutBadgeHtml}${revisedBadgeHtml}</div><div class="history-item-actions"><button class="copy-record" type="button" title="Salin transaksi ini">Salin</button>${adminActionsHtml}</div></div><strong class="history-item-amount">${isExpense?"-":""}Rp${rupiah(r.amount)}</strong>${noteHtml}<a class="history-item-link" href="${r.imageUrl}" target="_blank" rel="noopener"><span>Lihat foto bukti</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></div>`;
       item.querySelector(".copy-record").onclick=async()=>{
         await navigator.clipboard.writeText(`${line} gambar ${r.imageUrl}`);
         toast("Transaksi disalin");
@@ -1501,12 +1737,27 @@ async function loadHistory(init=false){
       recapBreakdown.push(`*Catatan: ${revisedCount} transaksi berlabel Revisi/Susulan*`);
     }
 
-    recapText=`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}\n\nLink bukti:\n${links.join("\n")}`;
+    let expenseRecapText="";
+    if(expenseCount>0){
+      expenseRecapText=`\n\n*--- DOKUMENTASI STRUK BELANJA CASH (LACI FISIK) ---*\n${expenseLines.join("\n")}\n*Total Belanja Cash: Rp${rupiah(expenseTotal)} (${expenseCount} nota)*\n_(Biaya pengeluaran cash kasir, murni arsip & tidak memotong saldo QRIS bank)_\n\nFoto Nota Belanja:\n${expenseLinks.join("\n")}`;
+    }
+
+    recapText=`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}\n\nLink bukti:\n${links.join("\n")}${expenseRecapText}`;
     if(e.recapSalesTotal)e.recapSalesTotal.textContent=`Rp${rupiah(salesTotal)}`;
     if(e.recapSurplusTotal)e.recapSurplusTotal.textContent=`+Rp${rupiah(surplusTotal)}`;
     if(e.recapCashoutTotal)e.recapCashoutTotal.textContent=`-Rp${rupiah(cashoutTotal)}`;
     if(e.recapRevisedCount)e.recapRevisedCount.textContent=`${revisedCount} trx`;
     if(e.historyTotal)e.historyTotal.textContent=`Rp${rupiah(total)}`;
+
+    if(e.recapExpenseSection){
+      if(expenseCount>0){
+        e.recapExpenseSection.style.display="block";
+        if(e.recapExpenseCount)e.recapExpenseCount.textContent=`${expenseCount} nota`;
+        if(e.recapExpenseTotal)e.recapExpenseTotal.textContent=`Rp${rupiah(expenseTotal)}`;
+      }else{
+        e.recapExpenseSection.style.display="none";
+      }
+    }
 
     const hasSpecialRows=surplusTotal>0||cashoutTotal>0||revisedCount>0;
     if(e.recapSurplusRow)e.recapSurplusRow.style.display=surplusTotal>0?"flex":"none";
@@ -1725,16 +1976,27 @@ if(e.manualIsCashout){
 
 if(e.editIsSurplus){
   e.editIsSurplus.onchange=()=>{
-    if(e.editIsSurplus.checked && e.editIsCashout){
-      e.editIsCashout.checked=false;
+    if(e.editIsSurplus.checked){
+      if(e.editIsCashout) e.editIsCashout.checked=false;
+      if(e.editIsExpense) e.editIsExpense.checked=false;
     }
   };
 }
 
 if(e.editIsCashout){
   e.editIsCashout.onchange=()=>{
-    if(e.editIsCashout.checked && e.editIsSurplus){
-      e.editIsSurplus.checked=false;
+    if(e.editIsCashout.checked){
+      if(e.editIsSurplus) e.editIsSurplus.checked=false;
+      if(e.editIsExpense) e.editIsExpense.checked=false;
+    }
+  };
+}
+
+if(e.editIsExpense){
+  e.editIsExpense.onchange=()=>{
+    if(e.editIsExpense.checked){
+      if(e.editIsSurplus) e.editIsSurplus.checked=false;
+      if(e.editIsCashout) e.editIsCashout.checked=false;
     }
   };
 }
@@ -1859,6 +2121,46 @@ if(e.removeRevisedPhoto){
   };
 }
 
+if(e.openExpenseBtn) e.openExpenseBtn.onclick=openExpenseModal;
+if(e.saveExpenseBtn) e.saveExpenseBtn.onclick=saveExpense;
+
+if(e.expenseAmount){
+  e.expenseAmount.oninput=()=>{
+    const d=e.expenseAmount.value.replace(/\D/g,"");
+    e.expenseAmount.value=d?rupiah(Number(d)):"";
+  };
+}
+
+if(e.expenseFileInput){
+  e.expenseFileInput.onchange=()=>{
+    const f=e.expenseFileInput.files[0];
+    if(!f)return;
+    const img=new Image();
+    img.onload=async()=>{
+      const w=img.naturalWidth,h=img.naturalHeight,max=1100,z=Math.min(1,max/w);
+      e.canvas.width=Math.round(w*z);
+      e.canvas.height=Math.round(h*z);
+      e.canvas.getContext("2d").drawImage(img,0,0,e.canvas.width,e.canvas.height);
+      expenseSelectedBlob=await canvasBlob(e.canvas);
+      if(e.expensePreviewImg)e.expensePreviewImg.src=URL.createObjectURL(expenseSelectedBlob);
+      if(e.expensePreviewWrap)e.expensePreviewWrap.classList.remove("hidden");
+      if(e.expenseGalleryText)e.expenseGalleryText.textContent="Ganti Foto Nota Galeri";
+      URL.revokeObjectURL(img.src);
+    };
+    img.src=URL.createObjectURL(f);
+  };
+}
+
+if(e.removeExpensePhoto){
+  e.removeExpensePhoto.onclick=()=>{
+    expenseSelectedBlob=null;
+    if(e.expensePreviewWrap)e.expensePreviewWrap.classList.add("hidden");
+    if(e.expensePreviewImg)e.expensePreviewImg.src="";
+    if(e.expenseGalleryText)e.expenseGalleryText.textContent="Pilih Foto Nota dari Galeri";
+    if(e.expenseFileInput)e.expenseFileInput.value="";
+  };
+}
+
 if(e.toggleConfirmRevisedBtn){
   e.toggleConfirmRevisedBtn.onclick=()=>{
     isRevisedMode=!isRevisedMode;
@@ -1954,6 +2256,7 @@ async function syncOfflineQueue() {
           fd.append("isSurplus", String(Boolean(it.isSurplus)));
           fd.append("isCashout", String(Boolean(it.isCashout)));
           fd.append("isRevised", String(Boolean(it.isRevised)));
+          fd.append("isExpense", String(Boolean(it.isExpense)));
           if (it.note) fd.append("note", it.note);
           if (it.customDate) fd.append("customDate", it.customDate);
           if (it.customTime) fd.append("customTime", it.customTime);
