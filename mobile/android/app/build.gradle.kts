@@ -11,8 +11,8 @@ android {
         applicationId = "id.qriskas.mobile"
         minSdk = 26
         targetSdk = 33
-        versionCode = 2
-        versionName = "1.2.0"
+        versionCode = 3
+        versionName = "1.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -65,4 +65,6 @@ dependencies {
     implementation("androidx.webkit:webkit:1.10.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+    // Coroutines: untuk proses foto async (Dispatchers.IO) agar kamera lebih cepat
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 }

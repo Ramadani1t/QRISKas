@@ -1,6 +1,8 @@
 # 🥟 QRIS Kas - Tahunya Krispiya
 ### *Ultra-Fast Serverless QRIS Payment Logger & Cashier PWA*
 
+> **Aplikasi kasir digital ringan untuk gerai fisik** — jepret struk QRIS, catat nominal, rekap harian ke WhatsApp, semua dalam hitungan detik. Ditenagai **Cloudflare Workers & R2 Storage** (serverless global, nol biaya server bulanan). Tersedia sebagai **PWA** di browser dan **APK Android native** dengan akses kamera hardware langsung.
+
 <p align="center">
   <img src="docs/assets/qris_logo_banner.jpg" alt="Tahunya Krispiya - QRIS Kas Banner" width="100%" style="border-radius: 14px; max-width: 850px;" />
 </p>

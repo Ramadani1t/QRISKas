@@ -3,6 +3,7 @@ package id.qriskas.mobile
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.ProgressDialog
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -32,6 +33,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import id.qriskas.mobile.databinding.ActivityMainBinding
+import kotlinx.coroutines.*
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
@@ -56,7 +58,14 @@ class MainActivity : AppCompatActivity() {
     private var cameraPhotoUri: Uri? = null
     private var cameraPhotoFile: File? = null
 
+    // Pre-warmed file: disiapkan sejak startup agar kamera bisa buka instan
+    private var prewarmPhotoFile: File? = null
+    private var prewarmPhotoUri: Uri? = null
+
     private var pendingCameraLaunch = false
+
+    // Coroutine scope untuk proses foto di background
+    private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     companion object {
         private const val TAG = "QRISKASMobile"
@@ -81,6 +90,30 @@ class MainActivity : AppCompatActivity() {
         setupBackPressHandler()
         registerNetworkMonitoring()
         requestHardwareCameraPermissionAtStartup()
+        // Pre-warm: siapkan file foto di background agar kamera buka instan
+        prewarmCameraFile()
+    }
+
+    /**
+     * Siapkan file foto sementara di background saat app baru buka.
+     * Sehingga saat kasir tekan tombol kamera, file sudah siap → delay 0.
+     */
+    private fun prewarmCameraFile() {
+        ioScope.launch {
+            try {
+                val file = createTempImageFile("PREWARM")
+                val uri = FileProvider.getUriForFile(
+                    this@MainActivity, "${packageName}.fileprovider", file
+                )
+                withContext(Dispatchers.Main) {
+                    prewarmPhotoFile = file
+                    prewarmPhotoUri = uri
+                    Log.d(TAG, "Camera file pre-warmed: ${file.name}")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Prewarm failed, will create on demand", e)
+            }
+        }
     }
 
     private fun requestHardwareCameraPermissionAtStartup() {
@@ -102,9 +135,21 @@ class MainActivity : AppCompatActivity() {
         ) { result ->
             val photo = cameraPhotoFile
             if (result.resultCode == Activity.RESULT_OK && photo != null && photo.exists() && photo.length() > 0) {
-                Thread {
+                // Tampilkan popup "Sedang memproses" agar kasir tahu proses berjalan
+                @Suppress("DEPRECATION")
+                val progressDialog = ProgressDialog(this@MainActivity).apply {
+                    setMessage("⏳ Sedang memproses foto...")
+                    setCancelable(false)
+                    isIndeterminate = true
+                    show()
+                }
+                // Prewarm file berikutnya di background sementara foto diproses
+                prewarmCameraFile()
+                // Proses foto di IO thread via coroutine (lebih efisien dari Thread{})
+                ioScope.launch {
                     val dataUrl = processPhotoFileToDataUrl(photo)
-                    runOnUiThread {
+                    withContext(Dispatchers.Main) {
+                        progressDialog.dismiss()
                         if (dataUrl != null) {
                             val js = """
                                 (function() {
@@ -126,9 +171,11 @@ class MainActivity : AppCompatActivity() {
                             Toast.makeText(this@MainActivity, "Gagal memproses foto kamera", Toast.LENGTH_SHORT).show()
                         }
                     }
-                }.start()
+                }
             } else {
                 Log.d(TAG, "Hardware camera cancelled or empty file")
+                // Pre-warm ulang file untuk pemakaian berikutnya
+                prewarmCameraFile()
             }
         }
 
@@ -318,12 +365,28 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Buat Camera Intent yang mengunci KAMERA BELAKANG secara hardware-level via Bundle extras & ClipData.
+     * Menggunakan pre-warmed file jika tersedia untuk membuka kamera lebih cepat (0-delay file creation).
      */
     fun createCameraIntent(): Intent? {
         return try {
-            val photoFile = createTempImageFile()
+            // Pakai file yang sudah disiapkan sebelumnya (pre-warmed) jika ada
+            val photoFile = if (prewarmPhotoFile != null && prewarmPhotoUri != null) {
+                val f = prewarmPhotoFile!!
+                val u = prewarmPhotoUri!!
+                cameraPhotoFile = f
+                cameraPhotoUri = u
+                // Reset prewarm agar tidak dipakai dua kali
+                prewarmPhotoFile = null
+                prewarmPhotoUri = null
+                Log.d(TAG, "Using pre-warmed camera file: ${f.name}")
+                f
+            } else {
+                // Fallback: buat file baru (hanya jika prewarm belum siap)
+                Log.d(TAG, "Pre-warmed file not ready, creating on demand")
+                createTempImageFile()
+            }
             cameraPhotoFile = photoFile
-            val photoUri = FileProvider.getUriForFile(
+            val photoUri = cameraPhotoUri ?: FileProvider.getUriForFile(
                 this,
                 "${packageName}.fileprovider",
                 photoFile
@@ -349,14 +412,28 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Buat file sementara untuk menyimpan foto HD dari kamera.
+     * @param prefix prefix nama file, default "CAM"
      */
-    private fun createTempImageFile(): File {
+    private fun createTempImageFile(prefix: String = "CAM"): File {
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: cacheDir
         if (!storageDir.exists()) {
             storageDir.mkdirs()
         }
-        return File.createTempFile("QRISKAS_${timeStamp}_", ".jpg", storageDir)
+        // Bersihkan file foto lama yang tidak terpakai (> 1 jam) agar storage tidak menumpuk
+        cleanupOldCameraFiles(storageDir)
+        return File.createTempFile("QRISKAS_${prefix}_${timeStamp}_", ".jpg", storageDir)
+    }
+
+    /**
+     * Hapus file foto sementara yang sudah lebih dari 1 jam dan tidak terpakai.
+     */
+    private fun cleanupOldCameraFiles(dir: File) {
+        try {
+            val oneHourAgo = System.currentTimeMillis() - 3_600_000L
+            dir.listFiles { f -> f.name.startsWith("QRISKAS_") && f.lastModified() < oneHourAgo }
+                ?.forEach { it.delete() }
+        } catch (_: Exception) {}
     }
 
     /**
@@ -382,6 +459,7 @@ class MainActivity : AppCompatActivity() {
 
             val decodeOptions = BitmapFactory.Options().apply {
                 this.inSampleSize = inSampleSize
+                // RGB_565: 2 bytes/pixel (vs ARGB_8888: 4 bytes) → decode 2x lebih cepat
                 inPreferredConfig = Bitmap.Config.RGB_565
             }
             val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath, decodeOptions) ?: return null
@@ -697,6 +775,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        // Cancel semua coroutine IO saat Activity ditutup
+        ioScope.cancel()
+        // Bersihkan pre-warmed file yang belum terpakai
+        try { prewarmPhotoFile?.delete() } catch (_: Exception) {}
         webView.apply {
             stopLoading()
             loadUrl("about:blank")

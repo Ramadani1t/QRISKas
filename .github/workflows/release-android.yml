@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag (e.g. v1.0.0)'
+        description: 'Release tag (e.g. v1.3.0)'
         required: true
-        default: 'v1.0.0'
+        default: 'v1.3.0'
 
 jobs:
   build-and-release:
@@ -86,20 +86,33 @@ jobs:
 
             Aplikasi kasir mobile native untuk **QRISKas (Tahunya Krispiya)**.
 
-            ### Fitur Utama
-            - Kamera belakang hardware-level untuk scan bukti QRIS
-            - Offline-first dengan auto-sync saat online
-            - Mode Surplus, Tukar Cash, dan Label Revisi
-            - Performa sat-set dengan hardware acceleration
+            ---
 
-            ### Download
-            Unduh file APK di bawah lalu install di HP Android.
+            ### ⚡ Yang Baru di Versi Ini
+            - **Kamera pre-warm**: file foto disiapkan saat app buka → kamera buka instan tanpa jeda
+            - **Popup "⏳ Sedang memproses foto..."**: kasir tahu proses berjalan, layar tidak blank
+            - **Proses foto async (Coroutine IO)**: kompresi foto lebih cepat, UI tidak freeze
+            - **Auto-cleanup file lama**: foto sementara dihapus otomatis setelah 1 jam
+            - **Deskripsi README** yang lebih lengkap & SEO-friendly
 
-            **Ukuran APK**: ~${{ steps.prepare.outputs.apk_size }}
-            **Min Android**: 8.0 (Oreo / API 26)
+            ### 📲 Cara Install di HP Android
+            1. Unduh file **`QRISKas-Mobile-${{ steps.prepare.outputs.tag }}.apk`** di bawah
+            2. Buka file APK di HP
+            3. Kalau muncul "Install dari sumber tidak dikenal" → ketuk **Izinkan**
+            4. Ketuk **Install** → selesai! Buka aplikasi **QRISKas**
+
+            > 💡 Kalau sudah punya versi lama, cukup install di atas (upgrade otomatis, data tidak hilang)
+
+            ### 📋 Info Teknis
+            | | |
+            |---|---|
+            | **Ukuran APK** | ~${{ steps.prepare.outputs.apk_size }} |
+            | **Min Android** | 8.0 Oreo (API 26) |
+            | **Target Android** | 13 (API 33) |
+            | **Arsitektur** | arm64-v8a, armeabi-v7a |
 
             ---
-            *Built automatically via GitHub Actions*
+            *🤖 Built automatically via GitHub Actions*
           files: ${{ steps.prepare.outputs.apk_file }}
           draft: false
           prerelease: false
