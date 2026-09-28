@@ -18,24 +18,25 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    signingConfigs {
-        // Release keystore: baca dari env variable (GitHub Actions CI atau lokal)
-        val keystorePath = System.getenv("KEYSTORE_PATH")
-        val hasReleaseKeystore = !keystorePath.isNullOrBlank() && File(keystorePath).exists()
+    val keystorePath = System.getenv("KEYSTORE_PATH")
+    val storePass = System.getenv("RELEASE_STORE_PASSWORD")
+    val keyAliasEnv = System.getenv("RELEASE_KEY_ALIAS")
+    val keyPass = System.getenv("RELEASE_KEY_PASSWORD")
 
-        create("release") {
-            if (hasReleaseKeystore) {
+    val isReleaseSigningReady = !keystorePath.isNullOrBlank() &&
+            File(keystorePath).exists() &&
+            File(keystorePath).length() > 0 &&
+            !storePass.isNullOrBlank() &&
+            !keyAliasEnv.isNullOrBlank() &&
+            !keyPass.isNullOrBlank()
+
+    signingConfigs {
+        if (isReleaseSigningReady) {
+            create("release") {
                 storeFile = File(keystorePath!!)
-                storePassword = System.getenv("RELEASE_STORE_PASSWORD")
-                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
-                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
-            } else {
-                // Fallback: tiru debug signing config bawaan AGP
-                val debugConfig = getByName("debug")
-                storeFile = debugConfig.storeFile
-                storePassword = debugConfig.storePassword
-                keyAlias = debugConfig.keyAlias
-                keyPassword = debugConfig.keyPassword
+                storePassword = storePass
+                keyAlias = keyAliasEnv
+                keyPassword = keyPass
             }
         }
     }
@@ -48,8 +49,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Pakai release signingConfig — konsisten di semua mesin/CI
-            signingConfig = signingConfigs.getByName("release")
+            // Pakai release signingConfig jika ready, fallback ke debug resmi jika belum
+            signingConfig = if (isReleaseSigningReady) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
         debug {
             applicationIdSuffix = ".debug"

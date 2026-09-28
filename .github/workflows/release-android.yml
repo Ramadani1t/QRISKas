@@ -36,12 +36,18 @@ jobs:
 
       - name: 🔑 Decode Release Keystore
         # Decode keystore dari GitHub Secret ke file sementara di runner
-        # Kalau secret belum diset, skip & build tetap jalan pakai debug key
+        # Menggunakan tr -d untuk membersihkan karakter carriage return (\r) atau spasi dari Windows
         run: |
           if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > /tmp/qriskas-release.jks
-            echo "KEYSTORE_PATH=/tmp/qriskas-release.jks" >> $GITHUB_ENV
-            echo "✅ Release keystore decoded"
+            printf "%s" "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | tr -d '\r\n ' | base64 -d > /tmp/qriskas-release.jks
+            FILESIZE=$(stat -c%s "/tmp/qriskas-release.jks" 2>/dev/null || echo 0)
+            if [ "$FILESIZE" -gt 500 ]; then
+              echo "KEYSTORE_PATH=/tmp/qriskas-release.jks" >> $GITHUB_ENV
+              echo "✅ Release keystore decoded successfully ($FILESIZE bytes)"
+            else
+              echo "KEYSTORE_PATH=" >> $GITHUB_ENV
+              echo "⚠️  Keystore file invalid or too small ($FILESIZE bytes) — falling back to debug key"
+            fi
           else
             echo "KEYSTORE_PATH=" >> $GITHUB_ENV
             echo "⚠️  RELEASE_KEYSTORE_BASE64 secret not set — using debug key"
