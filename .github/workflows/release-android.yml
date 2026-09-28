@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag (e.g. v1.4.1)'
+        description: 'Release tag (e.g. v1.4.2)'
         required: true
-        default: 'v1.4.1'
+        default: 'v1.4.2'
 
 jobs:
   build-and-release:
@@ -124,11 +124,11 @@ jobs:
 
             ---
 
-            ### ⚡ Yang Baru di Versi Ini (v1.4.1)
-            - **Tombol Cepat "+ Tandai Struk Cash"**: Di samping tombol revisi setelah jepret foto di scanner, kasir dapat langsung menandai foto sebagai Struk Belanja Cash dengan 1 kali klik.
-            - **Toggle Struk Belanja Cash di Layar Edit**: Detail transaksi menyediakan opsi centang "Struk Belanja Cash (Laci)" beserta input keterangan keperluan belanja.
-            - **Kunci Permanen Signature Resmi Toko**: Keystore release kini terkunci permanen di build pipeline, memastikan sertifikat SHA-256 selalu konsisten dan 100% bebas dari kendala "paket bentrok" pada update-update selanjutnya.
-            - **Pemisahan Kas Fisik vs QRIS**: Struk belanja cash laci toko tidak memotong saldo QRIS bank, tetap terdokumentasi terpisah di rekap harian.
+            ### ⚡ Yang Baru di Versi Ini (v1.4.2)
+            - **Tombol "Buka" di Dialog Pembaruan**: Di samping tombol "Unduh & Pasang Update" dan "Nanti", kini tersedia tombol "Buka" yang langsung membuka installer APK jika file sudah terunduh di folder Downloads, atau membuka halaman rilis di browser.
+            - **Penyempurnaan Alur In-App Update**: Deteksi file APK lokal otomatis sehingga kasir tidak perlu mengunduh ulang jika file APK rilis sudah ada di perangkat.
+            - **Fitur Struk Belanja Cash Laci**: Pencatatan struk belanja tunai tetap rapi dan terpisah tanpa memotong total QRIS.
+            - **Kunci Permanen Signature Resmi Toko**: Keystore release terkunci permanen di build pipeline, sertifikat SHA-256 selalu konsisten dan 100% bebas dari kendala "paket bentrok".
 
             ### 📲 Cara Install di HP Android
             1. Unduh file **`QRISKas-Mobile-${{ steps.prepare.outputs.tag }}.apk`** di bawah

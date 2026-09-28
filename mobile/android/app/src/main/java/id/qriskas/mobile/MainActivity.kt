@@ -644,6 +644,7 @@ class MainActivity : AppCompatActivity() {
                                 versionName: '${info.versionName}',
                                 releaseName: '$escapedName',
                                 apkUrl: '${info.apkUrl ?: ""}',
+                                htmlUrl: '${info.htmlUrl}',
                                 apkSize: ${info.apkSize},
                                 body: `$escapedBody`,
                                 isManual: $isManual

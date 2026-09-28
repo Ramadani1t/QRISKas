@@ -30,7 +30,7 @@ const ids=[
   "settingCustomPackage","settingShortcutEnabled","settingShortcutLabel","settingShortcutUrl","shortcutFields",
   "settingSurplusEnabled","settingCashoutEnabled","settingRevisionEnabled","settingExpenseEnabled","settingGroupedEnabled","settingRetentionDays","cleanNowBtn","saveSettingsBtn",
   "mobileAppUpdateSection","mobileCurrentVersionBadge","mobileUpdateHelpText","checkMobileUpdateBtn","checkMobileUpdateBtnText",
-  "mobileUpdateVerifyBox","mobileUpdateTargetTag","mobileUpdateSizeInfo","mobileUpdateChangelog","executeMobileUpdateBtn","dismissMobileUpdateBtn"
+  "mobileUpdateVerifyBox","mobileUpdateTargetTag","mobileUpdateSizeInfo","mobileUpdateChangelog","executeMobileUpdateBtn","openMobileUpdateBtn","dismissMobileUpdateBtn"
 ];
 const e=Object.fromEntries(ids.map(id=>[id,$(id)]));
 let stream,imageBlob,amount=0,recapText="",originalTime="",originalDate="",pendingDeleteRecord=null,pendingEditRecord=null;
@@ -2460,6 +2460,7 @@ async function checkGitHubReleaseFallback() {
         versionName: latestVer,
         releaseName: data.name,
         apkUrl: apkUrl,
+        htmlUrl: data.html_url || "https://github.com/Ramadani1t/QRISKas/releases/latest",
         apkSize: apkSize,
         body: data.body,
         isManual: true,
@@ -2508,6 +2509,22 @@ if (e.executeMobileUpdateBtn) {
       window.QriskasAndroid.openExternalUrl(pendingMobileUpdateInfo.apkUrl);
     } else {
       window.open(pendingMobileUpdateInfo.apkUrl, "_blank");
+    }
+  });
+}
+
+if (e.openMobileUpdateBtn) {
+  e.openMobileUpdateBtn.addEventListener("click", () => {
+    const apkUrl = pendingMobileUpdateInfo?.apkUrl || "";
+    const htmlUrl = pendingMobileUpdateInfo?.htmlUrl || "https://github.com/Ramadani1t/QRISKas/releases/latest";
+    const tagName = pendingMobileUpdateInfo?.tagName || "v1.4.2";
+
+    if (window.QriskasAndroid && typeof window.QriskasAndroid.openUpdate === "function") {
+      window.QriskasAndroid.openUpdate(apkUrl, htmlUrl, tagName);
+    } else if (window.QriskasAndroid && typeof window.QriskasAndroid.openExternalUrl === "function") {
+      window.QriskasAndroid.openExternalUrl(htmlUrl);
+    } else {
+      window.open(htmlUrl, "_blank");
     }
   });
 }

@@ -194,4 +194,14 @@ class WebAppInterface(private val activity: MainActivity) {
             UpdateManager.downloadAndInstall(activity, apkUrl, tagName)
         }
     }
+
+    /**
+     * Pemicu buka file APK installer jika sudah diunduh atau buka link rilis browser.
+     */
+    @JavascriptInterface
+    fun openUpdate(apkUrl: String?, htmlUrl: String?, tagName: String?) {
+        activity.runOnUiThread {
+            UpdateManager.openUpdate(activity, apkUrl, htmlUrl, tagName ?: "latest")
+        }
+    }
 }

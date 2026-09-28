@@ -211,7 +211,7 @@ object UpdateManager {
      * Pasang file APK yang sudah diunduh dari public Downloads menggunakan FileProvider.
      * File ada di /sdcard/Download/ — folder yang bisa diakses installer Android.
      */
-    private fun installDownloadedApk(activity: Activity, fileName: String) {
+    fun installDownloadedApk(activity: Activity, fileName: String) {
         try {
             // Baca dari PUBLIC Downloads — lokasi yang sama dengan tempat download
             val publicDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -244,6 +244,29 @@ object UpdateManager {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch package installer", e)
             Toast.makeText(activity, "Silakan buka folder Downloads untuk memasang APK", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /**
+     * Buka file APK installer jika sudah diunduh di folder Downloads, atau buka link rilis di browser jika belum.
+     */
+    fun openUpdate(activity: Activity, apkUrl: String?, htmlUrl: String?, tagName: String = "latest") {
+        try {
+            val fileName = "QRISKas-Mobile-$tagName.apk"
+            val publicDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val file = File(publicDownloads, fileName)
+            if (file.exists() && file.length() > 0) {
+                Toast.makeText(activity, "Membuka file installer APK...", Toast.LENGTH_SHORT).show()
+                installDownloadedApk(activity, fileName)
+            } else {
+                val targetUrl = if (!htmlUrl.isNullOrBlank()) htmlUrl else if (!apkUrl.isNullOrBlank()) apkUrl else GITHUB_LATEST_RELEASE_URL
+                Toast.makeText(activity, "Membuka halaman pembaruan di browser...", Toast.LENGTH_SHORT).show()
+                openInBrowser(activity, targetUrl)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed in openUpdate", e)
+            val targetUrl = htmlUrl ?: apkUrl ?: GITHUB_LATEST_RELEASE_URL
+            openInBrowser(activity, targetUrl)
         }
     }
 
