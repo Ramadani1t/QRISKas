@@ -34,6 +34,19 @@ jobs:
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "platforms;android-33" "build-tools;34.0.0" > /dev/null
 
+      - name: 🔑 Decode Release Keystore
+        # Decode keystore dari GitHub Secret ke file sementara di runner
+        # Kalau secret belum diset, skip & build tetap jalan pakai debug key
+        run: |
+          if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > /tmp/qriskas-release.jks
+            echo "KEYSTORE_READY=true" >> $GITHUB_ENV
+            echo "✅ Release keystore decoded"
+          else
+            echo "KEYSTORE_READY=false" >> $GITHUB_ENV
+            echo "⚠️  RELEASE_KEYSTORE_BASE64 secret not set — using debug key"
+          fi
+
       - name: 🔑 Configure local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > mobile/android/local.properties
 
@@ -42,7 +55,16 @@ jobs:
 
       - name: 🔨 Build Release APK
         working-directory: mobile/android
+        env:
+          KEYSTORE_PATH: ${{ env.KEYSTORE_READY == 'true' && '/tmp/qriskas-release.jks' || '' }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: 🗑️ Cleanup Keystore
+        if: always()
+        run: rm -f /tmp/qriskas-release.jks
 
       - name: 📦 Prepare APK
         id: prepare
@@ -89,11 +111,11 @@ jobs:
             ---
 
             ### ⚡ Yang Baru di Versi Ini
+            - **Fix update APK**: download ke public Downloads, install tidak gagal lagi
+            - **Fix signature**: release keystore konsisten, tidak bentrok saat update
             - **Kamera pre-warm**: file foto disiapkan saat app buka → kamera buka instan tanpa jeda
             - **Popup "⏳ Sedang memproses foto..."**: kasir tahu proses berjalan, layar tidak blank
             - **Proses foto async (Coroutine IO)**: kompresi foto lebih cepat, UI tidak freeze
-            - **Auto-cleanup file lama**: foto sementara dihapus otomatis setelah 1 jam
-            - **Deskripsi README** yang lebih lengkap & SEO-friendly
 
             ### 📲 Cara Install di HP Android
             1. Unduh file **`QRISKas-Mobile-${{ steps.prepare.outputs.tag }}.apk`** di bawah
@@ -101,7 +123,7 @@ jobs:
             3. Kalau muncul "Install dari sumber tidak dikenal" → ketuk **Izinkan**
             4. Ketuk **Install** → selesai! Buka aplikasi **QRISKas**
 
-            > 💡 Kalau sudah punya versi lama, cukup install di atas (upgrade otomatis, data tidak hilang)
+            > 💡 Kalau sudah punya versi lama dengan signature berbeda, **uninstall dulu** lalu install versi ini. Update selanjutnya bisa langsung tanpa uninstall.
 
             ### 📋 Info Teknis
             | | |

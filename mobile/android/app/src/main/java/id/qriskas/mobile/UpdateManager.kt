@@ -166,7 +166,9 @@ object UpdateManager {
                 setTitle("Mengunduh QRISKas Mobile $tagName")
                 setDescription("Memperbarui aplikasi kasir...")
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setDestinationInExternalFilesDir(activity, Environment.DIRECTORY_DOWNLOADS, fileName)
+                // Simpan ke PUBLIC Downloads (/sdcard/Download/) agar installer Android bisa akses
+                // JANGAN pakai setDestinationInExternalFilesDir — itu folder private app, installer tidak bisa baca!
+                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
                 setMimeType("application/vnd.android.package-archive")
             }
 
@@ -206,19 +208,27 @@ object UpdateManager {
     }
 
     /**
-     * Pasang file APK yang sudah diunduh menggunakan FileProvider.
+     * Pasang file APK yang sudah diunduh dari public Downloads menggunakan FileProvider.
+     * File ada di /sdcard/Download/ — folder yang bisa diakses installer Android.
      */
     private fun installDownloadedApk(activity: Activity, fileName: String) {
         try {
-            val downloadDir = activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-            val file = File(downloadDir, fileName)
+            // Baca dari PUBLIC Downloads — lokasi yang sama dengan tempat download
+            val publicDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val file = File(publicDownloads, fileName)
 
             if (file.exists() && file.length() > 0) {
-                val apkUri = FileProvider.getUriForFile(
-                    activity,
-                    "${activity.packageName}.fileprovider",
-                    file
-                )
+                // Android 7+ wajib pakai FileProvider untuk share URI ke installer
+                val apkUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    FileProvider.getUriForFile(
+                        activity,
+                        "${activity.packageName}.fileprovider",
+                        file
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    Uri.fromFile(file)
+                }
 
                 val installIntent = Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(apkUri, "application/vnd.android.package-archive")
@@ -228,11 +238,12 @@ object UpdateManager {
 
                 activity.startActivity(installIntent)
             } else {
-                Toast.makeText(activity, "File APK tidak ditemukan", Toast.LENGTH_SHORT).show()
+                Log.e(TAG, "APK file not found at: ${file.absolutePath}")
+                Toast.makeText(activity, "File APK tidak ditemukan di Downloads", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch package installer", e)
-            Toast.makeText(activity, "Silakan buka unduhan untuk memasang APK", Toast.LENGTH_LONG).show()
+            Toast.makeText(activity, "Silakan buka folder Downloads untuk memasang APK", Toast.LENGTH_LONG).show()
         }
     }
 
