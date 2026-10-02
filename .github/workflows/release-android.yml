@@ -9,7 +9,7 @@ on:
       release_tag:
         description: 'Release tag (e.g. v1.4.2)'
         required: true
-        default: 'v1.4.2'
+        default: 'v1.5.0'
 
 jobs:
   build-and-release:
@@ -124,11 +124,12 @@ jobs:
 
             ---
 
-            ### ⚡ Yang Baru di Versi Ini (v1.4.2)
-            - **Tombol "Buka" di Dialog Pembaruan**: Di samping tombol "Unduh & Pasang Update" dan "Nanti", kini tersedia tombol "Buka" yang langsung membuka installer APK jika file sudah terunduh di folder Downloads, atau membuka halaman rilis di browser.
-            - **Penyempurnaan Alur In-App Update**: Deteksi file APK lokal otomatis sehingga kasir tidak perlu mengunduh ulang jika file APK rilis sudah ada di perangkat.
-            - **Fitur Struk Belanja Cash Laci**: Pencatatan struk belanja tunai tetap rapi dan terpisah tanpa memotong total QRIS.
-            - **Kunci Permanen Signature Resmi Toko**: Keystore release terkunci permanen di build pipeline, sertifikat SHA-256 selalu konsisten dan 100% bebas dari kendala "paket bentrok".
+            ### ⚡ Yang Baru di Versi Ini (v1.5.0)
+            - **Mode Scan Delay Save (Foto Dulu, Nominal Nanti)**: Fitur baru di Pengaturan! Saat aktif, foto langsung tersimpan tanpa perlu isi nominal. Kasir bisa lanjut melayani pelanggan berikutnya dengan super cepat.
+            - **Tombol Pending dengan Badge Counter**: Lihat berapa foto yang masih belum diisi nominal lewat badge angka di tombol Pending.
+            - **Dialog Pending dengan Preview Foto**: Buka daftar transaksi pending lengkap dengan thumbnail foto. Klik foto untuk memperbesar. Klik "Isi Nominal" untuk konfirmasi.
+            - **Konfirmasi Nominal Pending**: Dialog konfirmasi lengkap dengan preview foto, input nominal, catatan, dan opsi surplus/tukar cash/struk cash.
+            - **Tidak Bentrok dengan Fitur Lama**: Fitur delay save sepenuhnya opsional dan tidak mengganggu alur scan normal.
 
             ### 📲 Cara Install di HP Android
             1. Unduh file **`QRISKas-Mobile-${{ steps.prepare.outputs.tag }}.apk`** di bawah

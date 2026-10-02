@@ -29,6 +29,9 @@ const ids=[
   "externalShortcut","settingsBtn","settingsDialog","settingDefaultCam","settingNativeCamMode","customPackageFields",
   "settingCustomPackage","settingShortcutEnabled","settingShortcutLabel","settingShortcutUrl","shortcutFields",
   "settingSurplusEnabled","settingCashoutEnabled","settingRevisionEnabled","settingExpenseEnabled","settingGroupedEnabled","settingRetentionDays","cleanNowBtn","saveSettingsBtn",
+  "settingDelaySaveEnabled","openPendingBtn","pendingBadge",
+  "pendingDialog","pendingList","pendingEmpty","pendingLoading","closePendingBtn","refreshPendingBtn",
+  "pendingConfirmDialog","pendingConfirmImg","pendingConfirmAmount","pendingConfirmNote","pendingConfirmIsSurplus","pendingConfirmIsCashout","pendingConfirmIsExpense","savePendingConfirmBtn","cancelPendingConfirmBtn",
   "mobileAppUpdateSection","mobileCurrentVersionBadge","mobileUpdateHelpText","checkMobileUpdateBtn","checkMobileUpdateBtnText",
   "mobileUpdateVerifyBox","mobileUpdateTargetTag","mobileUpdateSizeInfo","mobileUpdateChangelog","executeMobileUpdateBtn","openMobileUpdateBtn","dismissMobileUpdateBtn"
 ];
@@ -79,7 +82,8 @@ function loadSettings(){
   const cashoutEnabled=localStorage.getItem("cashoutEnabled")!=="false";
   const revisionEnabled=localStorage.getItem("revisionEnabled")!=="false";
   const expenseEnabled=localStorage.getItem("expenseEnabled")!=="false";
-  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled,expenseEnabled};
+  const delaySaveEnabled=localStorage.getItem("delaySaveEnabled")==="true";
+  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled,expenseEnabled,delaySaveEnabled};
 }
 
 function applySettingsUI(s){
@@ -155,6 +159,11 @@ function applySettingsUI(s){
       e.externalShortcut.style.display="none";
     }
   }
+
+  // Tampilkan/sembunyikan tombol pending berdasarkan setting delay save
+  if(e.openPendingBtn){
+    e.openPendingBtn.style.display=s.delaySaveEnabled?"flex":"none";
+  }
 }
 
 async function openSettingsModal(){
@@ -175,6 +184,7 @@ async function openSettingsModal(){
   if(e.settingRevisionEnabled)e.settingRevisionEnabled.checked=s.revisionEnabled;
   if(e.settingExpenseEnabled)e.settingExpenseEnabled.checked=s.expenseEnabled;
   if(e.settingGroupedEnabled)e.settingGroupedEnabled.checked=s.groupedEnabled;
+  if(e.settingDelaySaveEnabled)e.settingDelaySaveEnabled.checked=s.delaySaveEnabled;
 
   try{
     const res=await fetch("/api/config/retention");
@@ -218,6 +228,7 @@ async function saveSettings(ev){
   const revisionEnabled=e.settingRevisionEnabled?e.settingRevisionEnabled.checked:true;
   const expenseEnabled=e.settingExpenseEnabled?e.settingExpenseEnabled.checked:true;
   const groupedEnabled=e.settingGroupedEnabled?e.settingGroupedEnabled.checked:true;
+  const delaySaveEnabled=e.settingDelaySaveEnabled?e.settingDelaySaveEnabled.checked:false;
   const retentionDays=Number(e.settingRetentionDays?.value||30);
 
   try{
@@ -240,8 +251,9 @@ async function saveSettings(ev){
   localStorage.setItem("revisionEnabled",String(revisionEnabled));
   localStorage.setItem("expenseEnabled",String(expenseEnabled));
   localStorage.setItem("groupedEnabled",String(groupedEnabled));
+  localStorage.setItem("delaySaveEnabled",String(delaySaveEnabled));
 
-  applySettingsUI({facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled,expenseEnabled});
+  applySettingsUI({facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled,expenseEnabled,delaySaveEnabled});
   if(e.settingsDialog)e.settingsDialog.close();
   toast("Pengaturan disimpan");
 
@@ -512,6 +524,14 @@ async function useSource(s, source="camera"){
   e.canvas.width=Math.round(w*z);e.canvas.height=Math.round(h*z);
   e.canvas.getContext("2d").drawImage(s,0,0,e.canvas.width,e.canvas.height);
   imageBlob=await canvasBlob(e.canvas);
+
+  // === DELAY SAVE MODE: Jika aktif, langsung upload foto sebagai pending & kembali ke kamera ===
+  const settings=loadSettings();
+  if(settings.delaySaveEnabled && (source==="camera"||source==="native_camera")){
+    await handleDelaySave(imageBlob);
+    return;
+  }
+
   e.preview.src=URL.createObjectURL(imageBlob);
   amount=0;e.amount.textContent="0";
   
@@ -543,6 +563,139 @@ async function useSource(s, source="camera"){
   e.success.classList.add("hidden");
   e.result.scrollIntoView({behavior:"smooth",block:"start"});
   setTimeout(()=>openManual(source),250);
+}
+
+// === DELAY SAVE: Upload foto langsung sebagai pending ===
+async function handleDelaySave(blob){
+  toast("📸 Menyimpan foto pending…");
+  try{
+    const fd=new FormData();
+    fd.append("image",blob,"bukti-pending.jpg");
+    const res=await fetch("/api/pending",{method:"POST",body:fd});
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error);
+    toast("✅ Foto tersimpan! Isi nominal nanti di Pending.");
+    updatePendingBadge();
+    // Vibrate feedback
+    if(window.QriskasAndroid && typeof window.QriskasAndroid.vibrate==="function"){
+      window.QriskasAndroid.vibrate(80);
+    } else if(window.AndroidBridge && typeof window.AndroidBridge.vibrate==="function"){
+      window.AndroidBridge.vibrate(80);
+    } else if(navigator.vibrate){
+      navigator.vibrate(80);
+    }
+  }catch(err){
+    toast(err.message||"Gagal menyimpan foto pending");
+  }
+}
+
+// === PENDING BADGE COUNT ===
+async function updatePendingBadge(){
+  if(!e.pendingBadge) return;
+  try{
+    const res=await fetch(`/api/pending?date=${localDate()}`);
+    if(!res.ok) return;
+    const data=await res.json();
+    const count=data.records?data.records.length:0;
+    e.pendingBadge.textContent=count>0?String(count):"";
+    e.pendingBadge.style.display=count>0?"flex":"none";
+  }catch(_){}
+}
+
+// === PENDING DIALOG ===
+let pendingConfirmRecord=null;
+
+async function openPendingDialog(){
+  if(e.pendingDialog) e.pendingDialog.showModal();
+  await loadPendingList();
+}
+
+async function loadPendingList(){
+  if(e.pendingLoading) e.pendingLoading.classList.remove("hidden");
+  if(e.pendingEmpty) e.pendingEmpty.classList.add("hidden");
+  if(e.pendingList) e.pendingList.innerHTML="";
+  try{
+    const res=await fetch(`/api/pending?date=${localDate()}`);
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error);
+    const records=data.records||[];
+    if(!records.length){
+      if(e.pendingEmpty) e.pendingEmpty.classList.remove("hidden");
+      return;
+    }
+    for(const r of records){
+      const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(r.savedAt));
+      const item=document.createElement("article");
+      item.className="pending-item";
+      item.innerHTML=`<img class="pending-item-thumb" src="${r.imageUrl}" alt="Foto Pending" loading="lazy"><div class="pending-item-body"><div class="pending-item-meta"><time class="pending-item-time">${time} WIB</time><span class="badge-pending">⏳ PENDING</span></div><div class="pending-item-actions"><button class="confirm-pending-btn" type="button">Isi Nominal</button></div></div>`;
+      item.querySelector(".confirm-pending-btn").onclick=()=>openPendingConfirm(r);
+      // Klik foto utk preview besar
+      item.querySelector(".pending-item-thumb").onclick=()=>{
+        window.open(r.imageUrl,"_blank");
+      };
+      e.pendingList.append(item);
+    }
+  }catch(err){
+    toast(err.message||"Gagal memuat pending");
+  }finally{
+    if(e.pendingLoading) e.pendingLoading.classList.add("hidden");
+  }
+}
+
+function openPendingConfirm(record){
+  pendingConfirmRecord=record;
+  if(e.pendingConfirmImg) e.pendingConfirmImg.src=record.imageUrl;
+  if(e.pendingConfirmAmount) e.pendingConfirmAmount.value="";
+  if(e.pendingConfirmNote) e.pendingConfirmNote.value="";
+  if(e.pendingConfirmIsSurplus) e.pendingConfirmIsSurplus.checked=false;
+  if(e.pendingConfirmIsCashout) e.pendingConfirmIsCashout.checked=false;
+  if(e.pendingConfirmIsExpense) e.pendingConfirmIsExpense.checked=false;
+  if(e.pendingConfirmDialog){
+    e.pendingConfirmDialog.showModal();
+    setTimeout(()=>e.pendingConfirmAmount?.focus(),100);
+  }
+}
+
+async function handleSavePendingConfirm(ev){
+  ev.preventDefault();
+  if(!pendingConfirmRecord) return;
+  const amt=Number((e.pendingConfirmAmount?.value||"").replace(/\D/g,""));
+  if(!amt) return toast("Masukkan nominal yang benar");
+  const note=(e.pendingConfirmNote?.value||"").trim();
+  const isSurplus=e.pendingConfirmIsSurplus?e.pendingConfirmIsSurplus.checked:false;
+  const isCashout=e.pendingConfirmIsCashout?e.pendingConfirmIsCashout.checked:false;
+  const isExpense=e.pendingConfirmIsExpense?e.pendingConfirmIsExpense.checked:false;
+
+  if(e.savePendingConfirmBtn){
+    e.savePendingConfirmBtn.disabled=true;
+    e.savePendingConfirmBtn.textContent="Menyimpan…";
+  }
+
+  try{
+    const res=await fetch("/api/pending",{
+      method:"PATCH",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({
+        recordKey:pendingConfirmRecord.recordKey,
+        amount:amt,
+        note,isSurplus,isCashout,isExpense
+      })
+    });
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error);
+    toast("✅ Transaksi pending dikonfirmasi!");
+    if(e.pendingConfirmDialog) e.pendingConfirmDialog.close();
+    pendingConfirmRecord=null;
+    await loadPendingList();
+    updatePendingBadge();
+  }catch(err){
+    toast(err.message||"Gagal konfirmasi pending");
+  }finally{
+    if(e.savePendingConfirmBtn){
+      e.savePendingConfirmBtn.disabled=false;
+      e.savePendingConfirmBtn.textContent="Konfirmasi & Simpan";
+    }
+  }
 }
 
 async function save(){
@@ -1646,6 +1799,9 @@ async function loadHistory(init=false){
     let total=0, salesTotal=0, surplusTotal=0, cashoutTotal=0, revisedCount=0, expenseTotal=0, expenseCount=0;
     const lines=[],links=[],expenseLines=[],expenseLinks=[];
     for(const [index,r] of data.records.entries()){
+      // Skip pending records (belum dikonfirmasi nominalnya)
+      if(r.isPending) continue;
+
       const isSurplus=Boolean(r.isSurplus);
       const isCashout=Boolean(r.isCashout);
       const isRevised=Boolean(r.isRevised);
@@ -2268,10 +2424,48 @@ if(e.editAmount){
 }
 if(e.saveEditBtn) e.saveEditBtn.onclick=handleSaveEdit;
 
+// === PENDING EVENT LISTENERS ===
+if(e.openPendingBtn) e.openPendingBtn.onclick=openPendingDialog;
+if(e.closePendingBtn) e.closePendingBtn.onclick=()=>{ if(e.pendingDialog) e.pendingDialog.close(); };
+if(e.refreshPendingBtn) e.refreshPendingBtn.onclick=loadPendingList;
+if(e.savePendingConfirmBtn) e.savePendingConfirmBtn.onclick=handleSavePendingConfirm;
+if(e.cancelPendingConfirmBtn) e.cancelPendingConfirmBtn.onclick=()=>{ if(e.pendingConfirmDialog) e.pendingConfirmDialog.close(); };
+if(e.pendingConfirmAmount){
+  e.pendingConfirmAmount.oninput=()=>{
+    const d=e.pendingConfirmAmount.value.replace(/\D/g,"");
+    e.pendingConfirmAmount.value=d?rupiah(Number(d)):"";
+  };
+}
+if(e.pendingConfirmIsSurplus){
+  e.pendingConfirmIsSurplus.onchange=()=>{
+    if(e.pendingConfirmIsSurplus.checked){
+      if(e.pendingConfirmIsCashout) e.pendingConfirmIsCashout.checked=false;
+      if(e.pendingConfirmIsExpense) e.pendingConfirmIsExpense.checked=false;
+    }
+  };
+}
+if(e.pendingConfirmIsCashout){
+  e.pendingConfirmIsCashout.onchange=()=>{
+    if(e.pendingConfirmIsCashout.checked){
+      if(e.pendingConfirmIsSurplus) e.pendingConfirmIsSurplus.checked=false;
+      if(e.pendingConfirmIsExpense) e.pendingConfirmIsExpense.checked=false;
+    }
+  };
+}
+if(e.pendingConfirmIsExpense){
+  e.pendingConfirmIsExpense.onchange=()=>{
+    if(e.pendingConfirmIsExpense.checked){
+      if(e.pendingConfirmIsSurplus) e.pendingConfirmIsSurplus.checked=false;
+      if(e.pendingConfirmIsCashout) e.pendingConfirmIsCashout.checked=false;
+    }
+  };
+}
+
 // Inisialisasi awal pengaturan & riwayat
 applySettingsUI(loadSettings());
 e.historyDate.value=localDate();
 loadHistory(true);
+updatePendingBadge();
 
 // === NATIVE ANDROID HARDWARE CAMERA BRIDGE CALLBACK (Persis DStock) ===
 window.onHardwareCameraCapture = function(dataUrl) {

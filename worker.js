@@ -274,6 +274,97 @@ export default {
         return json({ error: "Gagal mengedit transaksi.", detail: error.message }, 500);
       }
     }
+    // === PENDING RECEIPTS API (Delay Save / Foto Dulu, Nominal Nanti) ===
+    if (url.pathname === "/api/pending" && request.method === "POST") {
+      if (role !== "admin") return json({ error: "Akses ditolak." }, 403);
+      try {
+        const form = await request.formData();
+        const image = form.get("image");
+        if (!(image instanceof File) || !image.type.startsWith("image/")) return json({ error: "Foto tidak valid." }, 400);
+        if (image.size > 2_000_000) return json({ error: "Foto maksimal 2 MB." }, 413);
+
+        const p = jakartaParts();
+        const savedAt = `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}+07:00`;
+        const id = crypto.randomUUID().slice(0, 8);
+        const base = `${p.year}/${p.month}/${p.day}/${p.hour}${p.minute}${p.second}-pending-${id}`;
+        const imageKey = `images/${base}.jpg`;
+        const recordKey = `records/${base}.json`;
+
+        const recordData = {
+          amount: 0, savedAt, imageKey,
+          isSurplus: false, isCashout: false, isRevised: false, isExpense: false,
+          isPending: true, note: ""
+        };
+
+        await Promise.all([
+          env.RECEIPTS.put(imageKey, image.stream(), {
+            httpMetadata: { contentType: "image/jpeg", cacheControl: "public, max-age=31536000, immutable" },
+            customMetadata: { savedAt, isPending: "true" }
+          }),
+          env.RECEIPTS.put(recordKey, JSON.stringify(recordData), {
+            httpMetadata: { contentType: "application/json" }
+          })
+        ]);
+
+        const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
+        return json({ savedAt, recordKey, imageKey, imageUrl: `${publicBase}/${imageKey}`, isPending: true });
+      } catch (error) {
+        return json({ error: "Gagal menyimpan foto pending.", detail: error.message }, 500);
+      }
+    }
+    if (url.pathname === "/api/pending" && request.method === "GET") {
+      if (role !== "admin") return json({ error: "Akses ditolak." }, 403);
+      try {
+        const now = jakartaParts();
+        const requested = url.searchParams.get("date") || `${now.year}-${now.month}-${now.day}`;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(requested)) return json({ error: "Tanggal tidak valid." }, 400);
+        const [year, month, day] = requested.split("-");
+        const listed = await env.RECEIPTS.list({ prefix: `records/${year}/${month}/${day}/`, limit: 1000 });
+        const records = (await Promise.all(listed.objects.map(async object => {
+          const stored = await env.RECEIPTS.get(object.key);
+          if (!stored) return null;
+          const data = await stored.json();
+          if (!data.isPending) return null;
+          return { ...data, recordKey: object.key };
+        }))).filter(Boolean).sort((a, b) => a.savedAt.localeCompare(b.savedAt));
+        const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
+        return json({ role, date: requested, records: records.map(r => ({ ...r, imageUrl: `${publicBase}/${r.imageKey}` })) });
+      } catch (error) {
+        return json({ error: "Gagal mengambil daftar pending.", detail: error.message }, 500);
+      }
+    }
+    if (url.pathname === "/api/pending" && request.method === "PATCH") {
+      if (role !== "admin") return json({ error: "Akses ditolak." }, 403);
+      try {
+        const body = await request.json();
+        const { recordKey, amount: rawAmount, note, isSurplus, isCashout, isRevised, isExpense } = body;
+        if (typeof recordKey !== "string") return json({ error: "Record key tidak valid." }, 400);
+        const stored = await env.RECEIPTS.get(recordKey);
+        if (!stored) return json({ error: "Transaksi pending tidak ditemukan." }, 404);
+        const record = await stored.json();
+        if (!record.isPending) return json({ error: "Transaksi ini sudah dikonfirmasi." }, 400);
+
+        const confirmedAmount = safeAmount(rawAmount);
+        if (!confirmedAmount) return json({ error: "Nominal tidak valid." }, 400);
+
+        record.amount = confirmedAmount;
+        record.isPending = false;
+        if (note !== undefined) record.note = String(note).trim().slice(0, 250);
+        if (isSurplus !== undefined) record.isSurplus = Boolean(isSurplus);
+        if (isCashout !== undefined) record.isCashout = Boolean(isCashout);
+        if (isRevised !== undefined) record.isRevised = Boolean(isRevised);
+        if (isExpense !== undefined) record.isExpense = Boolean(isExpense);
+
+        await env.RECEIPTS.put(recordKey, JSON.stringify(record), {
+          httpMetadata: { contentType: "application/json" }
+        });
+
+        const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
+        return json({ confirmed: true, record: { ...record, recordKey, imageUrl: `${publicBase}/${record.imageKey}` } });
+      } catch (error) {
+        return json({ error: "Gagal mengkonfirmasi pending.", detail: error.message }, 500);
+      }
+    }
     if (url.pathname === "/api/receipts" && request.method === "POST") {
       if (role !== "admin") return json({ error: "Akses ditolak. Anda hanya dalam mode intip." }, 403);
       try {
