@@ -33,7 +33,11 @@ const ids=[
   "pendingDialog","pendingList","pendingEmpty","pendingLoading","closePendingBtn","refreshPendingBtn",
   "pendingConfirmDialog","pendingConfirmImg","pendingConfirmAmount","pendingConfirmNote","pendingConfirmIsSurplus","pendingConfirmIsCashout","pendingConfirmIsExpense","savePendingConfirmBtn","cancelPendingConfirmBtn",
   "mobileAppUpdateSection","mobileCurrentVersionBadge","mobileUpdateHelpText","checkMobileUpdateBtn","checkMobileUpdateBtnText",
-  "mobileUpdateVerifyBox","mobileUpdateTargetTag","mobileUpdateSizeInfo","mobileUpdateChangelog","executeMobileUpdateBtn","openMobileUpdateBtn","dismissMobileUpdateBtn"
+  "mobileUpdateVerifyBox","mobileUpdateTargetTag","mobileUpdateSizeInfo","mobileUpdateChangelog","executeMobileUpdateBtn","openMobileUpdateBtn","dismissMobileUpdateBtn",
+  "modeSectionLabel",
+  "imagePreviewDialog","imagePreviewModalImg","imagePreviewTitle","imagePreviewSubtitle","imagePreviewMeta","imagePreviewCloseBtn","imagePreviewOpenBrowserBtn","imagePreviewCopyLinkBtn",
+  "settingImagePreviewMode","settingInstallBannerEnabled",
+  "webInstallBanner","webInstallVersionBadge","webInstallPwaBtn","webInstallApkBtn","dismissInstallBannerBtn","webInstallApkBtnText"
 ];
 const e=Object.fromEntries(ids.map(id=>[id,$(id)]));
 let stream,imageBlob,amount=0,recapText="",originalTime="",originalDate="",pendingDeleteRecord=null,pendingEditRecord=null;
@@ -63,7 +67,66 @@ const formatReceiptLine=(time,amt,isSurplus,isCashout,isRevised,note,isExpense)=
   const tagStr=tags.length?` (${tags.join(", ")})`:"";
   return `${time} - ${rupiah(amt)}${tagStr}`;
 };
-const toast=t=>{e.toast.textContent=t;e.toast.classList.add("show");setTimeout(()=>e.toast.classList.remove("show"),2800)};
+// === TOAST NOTIFIKASI (tipe: success | error | warning | info | loading) ===
+const TOAST_META={
+  success:{title:"Berhasil",icon:'<polyline points="20 6 9 17 4 12"/>'},
+  error:{title:"Gagal",icon:'<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'},
+  warning:{title:"Perhatian",icon:'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'},
+  info:{title:"Info",icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>'},
+  loading:{title:"Memproses",icon:'<path d="M21 12a9 9 0 1 1-6.22-8.56"/>'}
+};
+const inferToastType=t=>{
+  const s=t.toLowerCase();
+  if(/offline|antrean|butuh|beralih|belum/.test(s))return "warning";
+  if(/gagal|tidak valid|tidak dapat|tidak bisa|tidak tersedia|ditolak|wajib|masukkan|error|salah/.test(s))return "error";
+  if(/berhasil|tersimpan|disimpan|disalin|dikonfirmasi|selesai|sukses|dihapus|diperbarui|dimuat|dicatat/.test(s))return "success";
+  return "info";
+};
+const supportsPopover=typeof HTMLElement!=="undefined"&&Object.prototype.hasOwnProperty.call(HTMLElement.prototype,"popover");
+let toastTimer=0,toastHideTimer=0;
+if(e.toast){
+  e.toast.setAttribute("role","status");
+  e.toast.setAttribute("aria-live","polite");
+  // Popover masuk ke "top layer" sehingga toast tetap terlihat di atas dialog modal
+  if(supportsPopover)e.toast.setAttribute("popover","manual");
+  e.toast.addEventListener("click",()=>hideToast());
+}
+function hideToast(){
+  clearTimeout(toastTimer);
+  if(!e.toast)return;
+  e.toast.classList.remove("show");
+  clearTimeout(toastHideTimer);
+  toastHideTimer=setTimeout(()=>{
+    if(supportsPopover&&!e.toast.classList.contains("show")){try{e.toast.hidePopover();}catch(_){}}
+  },280);
+}
+function toast(msg,type){
+  const text=String(msg??"").trim();
+  if(!text||!e.toast)return;
+  const kind=TOAST_META[type]?type:inferToastType(text);
+  const meta=TOAST_META[kind];
+  const duration=kind==="loading"?15000:Math.min(5200,Math.max(2400,text.length*60));
+  clearTimeout(toastTimer);
+  clearTimeout(toastHideTimer);
+  e.toast.className=`toast toast-${kind}`;
+  e.toast.innerHTML=`<span class="toast-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"${kind==="loading"?' class="toast-spin"':""}>${meta.icon}</svg></span><span class="toast-body"><strong class="toast-title">${meta.title}</strong><span class="toast-msg">${escapeHtml(text)}</span></span><span class="toast-progress" style="animation-duration:${duration}ms"></span>`;
+  if(supportsPopover){
+    try{
+      if(e.toast.matches(":popover-open"))e.toast.hidePopover();
+      e.toast.showPopover();
+    }catch(_){}
+  }
+  void e.toast.offsetWidth;
+  requestAnimationFrame(()=>e.toast.classList.add("show"));
+  toastTimer=setTimeout(hideToast,duration);
+}
+function hapticTap(ms=40){
+  try{
+    if(window.QriskasAndroid&&typeof window.QriskasAndroid.vibrate==="function")window.QriskasAndroid.vibrate(ms);
+    else if(window.AndroidBridge&&typeof window.AndroidBridge.vibrate==="function")window.AndroidBridge.vibrate(ms);
+    else if(navigator.vibrate)navigator.vibrate(ms);
+  }catch(_){}
+}
 const localDate=()=>{const p=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Jakarta",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(),v=Object.fromEntries(p.map(x=>[x.type,x.value]));return `${v.year}-${v.month}-${v.day}`};
 const currentJakartaTime=()=>{const p=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(),v=Object.fromEntries(p.map(x=>[x.type,x.value]));return `${v.hour}:${v.minute}`};
 
@@ -83,7 +146,9 @@ function loadSettings(){
   const revisionEnabled=localStorage.getItem("revisionEnabled")!=="false";
   const expenseEnabled=localStorage.getItem("expenseEnabled")!=="false";
   const delaySaveEnabled=localStorage.getItem("delaySaveEnabled")==="true";
-  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled,expenseEnabled,delaySaveEnabled};
+  const imagePreviewMode=localStorage.getItem("imagePreviewMode")||"in_app";
+  const installBannerEnabled=localStorage.getItem("installBannerEnabled")!=="false";
+  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled,expenseEnabled,delaySaveEnabled,imagePreviewMode,installBannerEnabled};
 }
 
 function applySettingsUI(s){
@@ -112,7 +177,13 @@ function applySettingsUI(s){
     if(e.manualRevisedGroup) e.manualRevisedGroup.style.display="none";
     if(e.manualExpenseGroup) e.manualExpenseGroup.style.display="none";
     if(e.toggleConfirmExpenseBtn) e.toggleConfirmExpenseBtn.style.display="none";
+    if(e.modeSectionLabel) e.modeSectionLabel.style.display="none";
     return;
+  }
+
+  // Judul seksi mode hanya tampil jika minimal satu mode aktif
+  if(e.modeSectionLabel){
+    e.modeSectionLabel.style.display=(s.surplusEnabled||s.cashoutEnabled||s.revisionEnabled||s.expenseEnabled)?"":"none";
   }
 
   if(e.openSurplusBtn){
@@ -196,16 +267,25 @@ async function openSettingsModal(){
     }
   }catch(_){}
 
-  // Khusus Mobile: tampilkan verifikasi pembaruan (di web biasa disembunyikan total)
-  const isMobile = Boolean(window.__isAndroidApp || window.QriskasAndroid || window.AndroidBridge);
+  if(e.settingImagePreviewMode) e.settingImagePreviewMode.value = s.imagePreviewMode || "in_app";
+  if(e.settingInstallBannerEnabled) e.settingInstallBannerEnabled.checked = s.installBannerEnabled !== false;
+
+  // Verifikasi Pembaruan untuk Web dan Android
+  const isAndroid = Boolean(window.__isAndroidApp || window.QriskasAndroid || window.AndroidBridge);
   if(e.mobileAppUpdateSection){
-    e.mobileAppUpdateSection.style.display = isMobile ? "block" : "none";
-    if(isMobile){
+    e.mobileAppUpdateSection.style.display = "block";
+    if(isAndroid){
       let ver = "1.2.0";
       if(window.QriskasAndroid && typeof window.QriskasAndroid.getAppVersionName === "function"){
         ver = window.QriskasAndroid.getAppVersionName();
       }
-      if(e.mobileCurrentVersionBadge) e.mobileCurrentVersionBadge.textContent = "v" + ver;
+      if(e.mobileCurrentVersionBadge) e.mobileCurrentVersionBadge.textContent = "v" + ver + " (Android)";
+      if(e.mobileUpdateHelpText) e.mobileUpdateHelpText.textContent = "Versi aplikasi Android terpasang saat ini.";
+      if(e.checkMobileUpdateBtnText) e.checkMobileUpdateBtnText.textContent = "Periksa Pembaruan Android";
+    }else{
+      if(e.mobileCurrentVersionBadge) e.mobileCurrentVersionBadge.textContent = "Web PWA";
+      if(e.mobileUpdateHelpText) e.mobileUpdateHelpText.textContent = "Periksa versi web terbaru & ketersediaan rilis APK Android.";
+      if(e.checkMobileUpdateBtnText) e.checkMobileUpdateBtnText.textContent = "Periksa Pembaruan Web & APK";
     }
   }
 
@@ -229,6 +309,8 @@ async function saveSettings(ev){
   const expenseEnabled=e.settingExpenseEnabled?e.settingExpenseEnabled.checked:true;
   const groupedEnabled=e.settingGroupedEnabled?e.settingGroupedEnabled.checked:true;
   const delaySaveEnabled=e.settingDelaySaveEnabled?e.settingDelaySaveEnabled.checked:false;
+  const imagePreviewMode=e.settingImagePreviewMode?.value||"in_app";
+  const installBannerEnabled=e.settingInstallBannerEnabled?e.settingInstallBannerEnabled.checked:true;
   const retentionDays=Number(e.settingRetentionDays?.value||30);
 
   try{
@@ -252,8 +334,13 @@ async function saveSettings(ev){
   localStorage.setItem("expenseEnabled",String(expenseEnabled));
   localStorage.setItem("groupedEnabled",String(groupedEnabled));
   localStorage.setItem("delaySaveEnabled",String(delaySaveEnabled));
+  localStorage.setItem("imagePreviewMode",imagePreviewMode);
+  localStorage.setItem("installBannerEnabled",String(installBannerEnabled));
 
-  applySettingsUI({facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled,expenseEnabled,delaySaveEnabled});
+  applySettingsUI({facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled,expenseEnabled,delaySaveEnabled,imagePreviewMode,installBannerEnabled});
+  if(!installBannerEnabled && e.webInstallBanner){
+    e.webInstallBanner.classList.add("hidden");
+  }
   if(e.settingsDialog)e.settingsDialog.close();
   toast("Pengaturan disimpan");
 
@@ -285,105 +372,179 @@ async function getAllVideoInputDevices(){
 }
 
 async function toggleCamera(){
-  const devices=await getAllVideoInputDevices();
-  const hasLabels=devices.some(d=>(d.label||"").trim().length>0);
-  if(devices.length>1 && hasLabels){
-    currentDeviceIndex=(currentDeviceIndex+1)%devices.length;
-    const dev=devices[currentDeviceIndex];
-    const label=(dev.label||"").toLowerCase();
-    const isFront=label.includes("front")||label.includes("user")||label.includes("depan")||label.includes("selfie")||label.includes("1");
-    currentFacingMode=isFront?"user":"environment";
-  }else{
-    currentFacingMode=currentFacingMode==="environment"?"user":"environment";
-  }
+  if(cameraStarting)return;
+  currentFacingMode=currentFacingMode==="environment"?"user":"environment";
   localStorage.setItem("preferredFacingMode",currentFacingMode);
   updateCamToggleBtnText();
-  await startCamera();
+  if(e.toggleCamMode)e.toggleCamMode.disabled=true;
+  try{
+    await startCamera();
+  }finally{
+    if(e.toggleCamMode)e.toggleCamMode.disabled=false;
+  }
 }
 
 async function refreshVideoDevices(){
   return await getAllVideoInputDevices();
 }
 
-// Algoritma Multi-Tier Hardware Camera Stream (Sesuai Standar DStock POS)
-async function getCameraStream(targetMode){
+// === KAMERA LIVE: pilih lensa utama, cache deviceId, resolusi tinggi ===
+const CAM_RES={width:{ideal:1920},height:{ideal:1080}};
+const FRONT_LABEL_RE=/front|user|depan|selfie/i;
+const BACK_LABEL_RE=/back|rear|environment|belakang/i;
+const AUX_LENS_RE=/ultra|tele|macro|depth|infrared|\bir\b|\btof\b/i;
+let cameraWanted=false;   // true setelah kamera live pernah berhasil aktif
+let cameraStarting=null;  // promise startCamera yang sedang berjalan (cegah double start)
+let capturing=false;
+
+const camCard=()=>e.camera?e.camera.closest(".camera-card"):null;
+const byDevice=id=>({video:{deviceId:{exact:id},...CAM_RES},audio:false});
+
+// Urutkan kamera belakang: lensa utama dulu, ultra-wide/tele/macro paling akhir
+function rankBackDevices(devices){
+  return devices
+    .filter(d=>d.deviceId&&!FRONT_LABEL_RE.test(d.label||""))
+    .map((d,order)=>{
+      const l=d.label||"";
+      let score=0;
+      if(BACK_LABEL_RE.test(l))score+=4;
+      if(/camera2? 0\b|^back camera$|main/i.test(l))score+=3;
+      if(AUX_LENS_RE.test(l))score-=6;
+      const m=l.match(/camera2?\s+(\d+)/i);
+      return {d,score,idx:m?Number(m[1]):order};
+    })
+    .sort((a,b)=>b.score-a.score||a.idx-b.idx)
+    .map(x=>x.d);
+}
+
+function pickDevicesFor(mode,devices){
+  // Label baru tersedia setelah izin kamera diberikan
+  if(!devices.some(d=>(d.label||"").trim()))return [];
+  return mode==="environment"
+    ?rankBackDevices(devices)
+    :devices.filter(d=>d.deviceId&&FRONT_LABEL_RE.test(d.label||""));
+}
+
+function releaseStream(){
   if(stream){
-    stream.getTracks().forEach(t=>{
-      try{ t.stop(); }catch(_){}
-    });
+    stream.getTracks().forEach(t=>{try{t.stop();}catch(_){}});
     stream=null;
   }
-  if(e.camera && e.camera.srcObject){
-    e.camera.srcObject=null;
-  }
-  await new Promise(r=>setTimeout(r,100));
+  if(e.camera&&e.camera.srcObject)e.camera.srcObject=null;
+}
 
-  let devices=await getAllVideoInputDevices();
+// Saat izin pertama label belum ada, sehingga browser bisa memilih lensa ultra-wide.
+// Setelah izin diberikan, pindah sekali ke lensa utama bila berbeda.
+async function upgradeToMainLens(s,mode){
+  if(mode!=="environment")return s;
+  const current=s.getVideoTracks()[0]?.getSettings?.().deviceId;
+  const best=pickDevicesFor(mode,await getAllVideoInputDevices())[0];
+  if(!current||!best||best.deviceId===current||!BACK_LABEL_RE.test(best.label||""))return s;
+  s.getTracks().forEach(t=>t.stop());
+  try{
+    return await navigator.mediaDevices.getUserMedia(byDevice(best.deviceId));
+  }catch(_){
+    return await navigator.mediaDevices.getUserMedia(byDevice(current));
+  }
+}
+
+async function getCameraStream(targetMode){
+  const hadStream=Boolean(stream);
+  releaseStream();
+  // Beri jeda singkat hanya jika hardware baru saja dilepas
+  if(hadStream)await new Promise(r=>setTimeout(r,120));
+
+  const cacheKey=`camDevice_${targetMode}`;
+  const cachedId=localStorage.getItem(cacheKey);
+  const devices=await getAllVideoInputDevices();
   const constraintsList=[];
-
-  // HANYA filter by label jika label sudah terungkap (setelah izin kamera aktif)
-  const hasLabels=devices.some(d=>(d.label||"").trim().length>0);
-  if(devices.length>0 && hasLabels){
-    if(targetMode==="environment"){
-      const backDevs=devices.filter(d=>{
-        const l=(d.label||"").toLowerCase();
-        return l.includes("back")||l.includes("rear")||l.includes("environment")||
-               l.includes("belakang")||l.includes("camera2 0")||l.includes("0, facing back")||
-               l.includes("main")||(!l.includes("front")&&!l.includes("user")&&!l.includes("depan")&&!l.includes("selfie")&&!l.includes("1"));
-      });
-      for(const b of backDevs){
-        if(b.deviceId) constraintsList.push({video:{deviceId:{exact:b.deviceId}},audio:false});
-      }
-    }else{
-      const frontDevs=devices.filter(d=>{
-        const l=(d.label||"").toLowerCase();
-        return l.includes("front")||l.includes("user")||l.includes("depan")||l.includes("selfie")||l.includes("1, facing front");
-      });
-      for(const f of frontDevs){
-        if(f.deviceId) constraintsList.push({video:{deviceId:{exact:f.deviceId}},audio:false});
-      }
-    }
+  if(cachedId)constraintsList.push(byDevice(cachedId));
+  for(const d of pickDevicesFor(targetMode,devices)){
+    if(d.deviceId!==cachedId)constraintsList.push(byDevice(d.deviceId));
   }
-
-  // Fallback constraints bertingkat persis DStock
-  if(targetMode==="environment"){
-    constraintsList.push({video:{facingMode:{exact:"environment"},width:{ideal:1280},height:{ideal:720}},audio:false});
-    constraintsList.push({video:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}},audio:false});
-    constraintsList.push({video:{facingMode:{ideal:"environment"}},audio:false});
-  }else{
-    constraintsList.push({video:{facingMode:{exact:"user"}},audio:false});
-    constraintsList.push({video:{facingMode:"user"},audio:false});
-    constraintsList.push({video:{facingMode:{ideal:"user"}},audio:false});
-  }
+  constraintsList.push({video:{facingMode:{exact:targetMode},...CAM_RES},audio:false});
+  constraintsList.push({video:{facingMode:{ideal:targetMode},...CAM_RES},audio:false});
+  constraintsList.push({video:{facingMode:{ideal:targetMode}},audio:false});
 
   let lastError=null;
   for(const c of constraintsList){
     try{
-      const s=await navigator.mediaDevices.getUserMedia(c);
-      await getAllVideoInputDevices();
+      let s=await navigator.mediaDevices.getUserMedia(c);
+      if(!c.video.deviceId)s=await upgradeToMainLens(s,targetMode);
+      const id=s.getVideoTracks()[0]?.getSettings?.().deviceId;
+      if(id)localStorage.setItem(cacheKey,id);
       return s;
     }catch(err){
       lastError=err;
+      if(c.video.deviceId&&c.video.deviceId.exact===cachedId)localStorage.removeItem(cacheKey);
+      // Izin ditolak berlaku untuk semua kamera, tidak perlu mencoba constraint lain
+      if(err&&(err.name==="NotAllowedError"||err.name==="SecurityError"))throw err;
     }
   }
 
-  // Fallback tahap 3 persis DStock: streaming sementara untuk memicu dialog izin, lalu enumerasi deviceId kamera belakang
+  // Fallback terakhir: stream umum untuk memicu izin, lalu cari kamera sesuai label
   try{
     const tempStream=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
-    tempStream.getTracks().forEach(t=>t.stop());
-    devices=await getAllVideoInputDevices();
-    const backDev=devices.find(d=>{
-      const l=(d.label||"").toLowerCase();
-      return l.includes("back")||l.includes("rear")||l.includes("environment")||l.includes("belakang")||l.includes("camera2 0")||l.includes("0, facing back");
-    });
-    if(backDev&&backDev.deviceId){
-      return await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:backDev.deviceId}},audio:false});
+    const best=pickDevicesFor(targetMode,await getAllVideoInputDevices())[0];
+    if(best){
+      tempStream.getTracks().forEach(t=>t.stop());
+      return await navigator.mediaDevices.getUserMedia(byDevice(best.deviceId));
     }
+    return tempStream;
   }catch(err2){
     lastError=err2;
   }
 
-  throw lastError||new Error("Kamera belakang tidak dapat diakses.");
+  throw lastError||new Error("Kamera tidak dapat diakses.");
+}
+
+function applyTrackEnhancements(track){
+  if(!track||typeof track.getCapabilities!=="function")return;
+  try{
+    const caps=track.getCapabilities()||{};
+    const adv={};
+    if(Array.isArray(caps.focusMode)&&caps.focusMode.includes("continuous"))adv.focusMode="continuous";
+    if(Array.isArray(caps.exposureMode)&&caps.exposureMode.includes("continuous"))adv.exposureMode="continuous";
+    if(Array.isArray(caps.whiteBalanceMode)&&caps.whiteBalanceMode.includes("continuous"))adv.whiteBalanceMode="continuous";
+    if(Object.keys(adv).length)track.applyConstraints({advanced:[adv]}).catch(()=>{});
+  }catch(_){}
+}
+
+async function waitForVideoReady(v){
+  try{await v.play();}catch(_){}
+  if(v.videoWidth>0)return;
+  await new Promise(resolve=>{
+    const done=()=>{
+      clearTimeout(timer);
+      v.removeEventListener("loadedmetadata",done);
+      v.removeEventListener("playing",done);
+      resolve();
+    };
+    const timer=setTimeout(done,2500);
+    v.addEventListener("loadedmetadata",done);
+    v.addEventListener("playing",done);
+  });
+}
+
+// Lepas hardware kamera (hemat baterai saat tab Riwayat / aplikasi di background)
+function stopCamera(){
+  releaseStream();
+  camCard()?.classList.remove("live");
+  if(e.capture)e.capture.disabled=true;
+}
+
+function shouldRunLiveCamera(){
+  return cameraWanted&&currentRole!=="guest"&&!document.hidden&&!e.scanPage.classList.contains("hidden");
+}
+
+function resumeLiveCamera(){
+  if(!shouldRunLiveCamera())return;
+  if(stream){
+    if(e.camera.paused)e.camera.play().catch(()=>{});
+    e.capture.disabled=false;
+    return;
+  }
+  startCamera({silent:true});
 }
 
 function triggerNativeCamera(){
@@ -402,63 +563,106 @@ function triggerNativeCamera(){
   return false;
 }
 
-async function startCamera(){
+async function startCamera(opts){
+  // opts.silent: dipakai saat resume otomatis, tidak memunculkan toast / kamera bawaan HP
+  const silent=Boolean(opts&&opts.silent===true);
+  if(cameraStarting)return cameraStarting;
+  cameraStarting=startCameraInner(silent).finally(()=>{cameraStarting=null;});
+  return cameraStarting;
+}
+
+async function startCameraInner(silent){
   if(!isSecureContext()){
-    toast("Kamera butuh HTTPS. Buka via https:// atau localhost.");
+    if(!silent)toast("Kamera live butuh koneksi HTTPS. Buka lewat https:// atau localhost.","warning");
     return;
   }
   if(!("mediaDevices" in navigator)||!navigator.mediaDevices.getUserMedia){
-    triggerNativeCamera();
+    if(!silent)triggerNativeCamera();
     return;
   }
 
   updateCamToggleBtnText();
+  const card=camCard();
 
   try{
-    if(e.startCamera) e.startCamera.textContent="Membuka kamera…";
+    if(e.startCamera)e.startCamera.textContent="Membuka kamera...";
+    if(e.capture)e.capture.disabled=true;
     stream=await getCameraStream(currentFacingMode);
 
     e.camera.setAttribute("playsinline","true");
     e.camera.setAttribute("webkit-playsinline","true");
     e.camera.muted=true;
     e.camera.srcObject=stream;
+    await waitForVideoReady(e.camera);
 
-    try{
-      await e.camera.play();
-    }catch(_){}
+    const track=stream.getVideoTracks()[0];
+    applyTrackEnhancements(track);
+    const facing=track?.getSettings?.().facingMode||currentFacingMode;
+    if(card){
+      card.classList.toggle("mirrored",facing==="user");
+      card.classList.add("live");
+    }
 
-    try{
-      const track=stream.getVideoTracks()[0];
-      if(track&&typeof track.getCapabilities==="function"){
-        const caps=track.getCapabilities();
-        if(caps.focusMode&&Array.isArray(caps.focusMode)&&caps.focusMode.includes("continuous")){
-          await track.applyConstraints({advanced:[{focusMode:"continuous"}]}).catch(()=>{});
-        }
-      }
-    }catch(_){}
-
+    cameraWanted=true;
     e.cameraEmpty.classList.add("hidden");
     e.startCamera.classList.add("hidden");
-    if(e.startCamera) e.startCamera.textContent="Aktifkan kamera";
+    e.startCamera.textContent="Aktifkan Kamera";
     e.capture.disabled=false;
   }catch(err){
     console.warn("Live in-app camera error, falling back to hardware native camera:", err);
+    releaseStream();
+    cameraWanted=false;
+    if(card)card.classList.remove("live");
+    e.capture.disabled=true;
     e.cameraEmpty.classList.remove("hidden");
     e.startCamera.classList.remove("hidden");
-    if(e.startCamera) e.startCamera.textContent="Coba lagi";
-    
-    // Auto-fallback persis DStock jika berjalan di Android App
+    e.startCamera.textContent="Coba Lagi";
+    if(silent)return;
+
+    // Auto-fallback jika berjalan di Android App
     if(window.QriskasAndroid || window.AndroidBridge || window.__isAndroidApp){
-      toast("Live kamera tidak aktif, beralih ke Kamera HP...");
+      toast("Kamera live tidak tersedia. Membuka kamera bawaan HP.","warning");
       triggerNativeCamera();
     } else {
-      const errMsg=err?.name==="NotAllowedError"?"Izin kamera ditolak di browser HP.":
-                   err?.name==="NotReadableError"?"Kamera sedang dipakai aplikasi lain.":
-                   "Live scanner kamera tidak aktif. Gunakan tombol 'Buka Kamera Foto HP'.";
-      toast(errMsg);
+      const errMsg=err?.name==="NotAllowedError"?"Izin kamera ditolak. Aktifkan izin kamera di pengaturan browser.":
+                   err?.name==="NotReadableError"?"Kamera sedang dipakai aplikasi lain. Tutup aplikasi tersebut lalu coba lagi.":
+                   "Kamera live tidak tersedia. Gunakan tombol Kamera HP.";
+      toast(errMsg,"error");
     }
   }
 }
+
+// Jepret dari kamera live dengan efek shutter + getar singkat
+async function captureFromCamera(){
+  if(capturing)return;
+  if(!stream||!e.camera.videoWidth){
+    toast("Kamera belum siap. Tunggu sebentar lalu coba lagi.","warning");
+    return;
+  }
+  capturing=true;
+  e.capture.disabled=true;
+  const card=camCard();
+  if(card){
+    card.classList.remove("flash");
+    void card.offsetWidth;
+    card.classList.add("flash");
+  }
+  hapticTap(30);
+  try{
+    await useSource(e.camera,"camera");
+  }finally{
+    capturing=false;
+    e.capture.disabled=!stream;
+  }
+}
+
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden){
+    if(stream)stopCamera();
+  }else if(e.result.classList.contains("hidden")&&e.success.classList.contains("hidden")){
+    resumeLiveCamera();
+  }
+});
 
 const canvasBlob=(c,q=.78)=>new Promise(r=>c.toBlob(r,"image/jpeg",q));
 
@@ -503,7 +707,7 @@ function updateRevisedToggleUI(){
   if(e.toggleConfirmRevisedBtn){
     e.toggleConfirmRevisedBtn.classList.toggle("active",Boolean(isRevisedMode));
     if(e.toggleConfirmRevisedText){
-      e.toggleConfirmRevisedText.textContent=isRevisedMode?"✓ Berlabel Revisi":"+ Beri Label Revisi";
+      e.toggleConfirmRevisedText.textContent=isRevisedMode?"Label Revisi Aktif":"+ Beri Label Revisi";
     }
   }
 }
@@ -513,17 +717,22 @@ function updateExpenseToggleUI(){
   if(e.toggleConfirmExpenseBtn){
     e.toggleConfirmExpenseBtn.classList.toggle("active",Boolean(isExpenseMode));
     if(e.toggleConfirmExpenseText){
-      e.toggleConfirmExpenseText.textContent=isExpenseMode?"✓ Struk Belanja Cash":"+ Tandai Struk Cash";
+      e.toggleConfirmExpenseText.textContent=isExpenseMode?"Struk Cash Aktif":"+ Tandai Struk Cash";
     }
   }
 }
 
 async function useSource(s, source="camera"){
   inputSource=source;
-  const w=s.videoWidth||s.naturalWidth,h=s.videoHeight||s.naturalHeight,max=1100,z=Math.min(1,max/w);
+  // Batasi sisi terpanjang agar teks nominal tetap tajam namun ukuran upload tetap ringan
+  const MAX_EDGE=1600;
+  const w=s.videoWidth||s.naturalWidth,h=s.videoHeight||s.naturalHeight,z=Math.min(1,MAX_EDGE/Math.max(w,h));
   e.canvas.width=Math.round(w*z);e.canvas.height=Math.round(h*z);
-  e.canvas.getContext("2d").drawImage(s,0,0,e.canvas.width,e.canvas.height);
-  imageBlob=await canvasBlob(e.canvas);
+  const ctx=e.canvas.getContext("2d");
+  ctx.imageSmoothingEnabled=true;
+  ctx.imageSmoothingQuality="high";
+  ctx.drawImage(s,0,0,e.canvas.width,e.canvas.height);
+  imageBlob=await canvasBlob(e.canvas,.8);
 
   // === DELAY SAVE MODE: Jika aktif, langsung upload foto sebagai pending & kembali ke kamera ===
   const settings=loadSettings();
@@ -531,6 +740,9 @@ async function useSource(s, source="camera"){
     await handleDelaySave(imageBlob);
     return;
   }
+
+  // Bekukan frame kamera live selama konfirmasi (dilanjutkan lagi saat reset)
+  if(source==="camera"){try{e.camera.pause();}catch(_){}}
 
   e.preview.src=URL.createObjectURL(imageBlob);
   amount=0;e.amount.textContent="0";
@@ -567,14 +779,14 @@ async function useSource(s, source="camera"){
 
 // === DELAY SAVE: Upload foto langsung sebagai pending ===
 async function handleDelaySave(blob){
-  toast("📸 Menyimpan foto pending…");
+  toast("Menyimpan foto ke daftar pending...","loading");
   try{
     const fd=new FormData();
     fd.append("image",blob,"bukti-pending.jpg");
     const res=await fetch("/api/pending",{method:"POST",body:fd});
     const data=await res.json();
     if(!res.ok) throw new Error(data.error);
-    toast("✅ Foto tersimpan! Isi nominal nanti di Pending.");
+    toast("Foto tersimpan. Isi nominalnya nanti lewat menu Pending.","success");
     updatePendingBadge();
     // Vibrate feedback
     if(window.QriskasAndroid && typeof window.QriskasAndroid.vibrate==="function"){
@@ -627,7 +839,7 @@ async function loadPendingList(){
       const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(r.savedAt));
       const item=document.createElement("article");
       item.className="pending-item";
-      item.innerHTML=`<img class="pending-item-thumb" src="${r.imageUrl}" alt="Foto Pending" loading="lazy"><div class="pending-item-body"><div class="pending-item-meta"><time class="pending-item-time">${time} WIB</time><span class="badge-pending">⏳ PENDING</span></div><div class="pending-item-actions"><button class="confirm-pending-btn" type="button">Isi Nominal</button></div></div>`;
+      item.innerHTML=`<img class="pending-item-thumb" src="${r.imageUrl}" alt="Foto Pending" loading="lazy"><div class="pending-item-body"><div class="pending-item-meta"><time class="pending-item-time">${time} WIB</time><span class="badge-pending">PENDING</span></div><div class="pending-item-actions"><button class="confirm-pending-btn" type="button">Isi Nominal</button></div></div>`;
       item.querySelector(".confirm-pending-btn").onclick=()=>openPendingConfirm(r);
       // Klik foto utk preview besar
       item.querySelector(".pending-item-thumb").onclick=()=>{
@@ -683,7 +895,7 @@ async function handleSavePendingConfirm(ev){
     });
     const data=await res.json();
     if(!res.ok) throw new Error(data.error);
-    toast("✅ Transaksi pending dikonfirmasi!");
+    toast("Transaksi pending berhasil dikonfirmasi","success");
     if(e.pendingConfirmDialog) e.pendingConfirmDialog.close();
     pendingConfirmRecord=null;
     await loadPendingList();
@@ -722,7 +934,7 @@ async function save(){
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
-    toast("Tersimpan di antrean offline! Akan otomatis disinkronkan saat ada internet.");
+    toast("Disimpan di antrean offline. Data akan disinkronkan otomatis saat internet tersambung.","warning");
     e.save.disabled=false;
     e.save.textContent="Simpan";
     return;
@@ -770,7 +982,7 @@ async function save(){
       e.result.classList.add("hidden");
       e.success.classList.remove("hidden");
       e.success.scrollIntoView({behavior:"smooth"});
-      toast("Tersimpan di antrean offline! Akan otomatis disinkronkan saat ada internet.");
+      toast("Disimpan di antrean offline. Data akan disinkronkan otomatis saat internet tersambung.","warning");
     } else {
       toast(x.message||"Gagal menyimpan");
     }
@@ -781,6 +993,7 @@ async function save(){
 function reset(){
   e.result.classList.add("hidden");
   e.success.classList.add("hidden");
+  resumeLiveCamera();
   imageBlob=null;amount=0;
   isSurplusMode=false;isCashoutMode=false;isRevisedMode=false;isExpenseMode=false;currentNote="";
   surplusSelectedBlob=null;cashoutSelectedBlob=null;revisedSelectedBlob=null;expenseSelectedBlob=null;
@@ -980,7 +1193,7 @@ function openCashoutModal(){
 async function saveSurplus(ev){
   ev.preventDefault();
   const sAmount=Number(e.surplusAmount.value.replace(/\D/g,""));
-  if(!sAmount)return toast("Masukkan nominal surplus yang benar");
+  if(!sAmount)return toast("Masukkan nominal surplus yang valid", "warning");
 
   const sNote=(e.surplusNote.value||"").trim();
   const sDate=e.surplusDate.value||localDate();
@@ -1013,7 +1226,7 @@ async function saveSurplus(ev){
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
-    toast("Surplus tersimpan di antrean offline!");
+    toast("Surplus disimpan di antrean offline", "warning");
     if(e.saveSurplusBtn){
       e.saveSurplusBtn.disabled=false;
       e.saveSurplusBtn.textContent="Simpan Surplus";
@@ -1057,7 +1270,7 @@ async function saveSurplus(ev){
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
-    toast("Surplus berhasil dicatat!");
+    toast("Surplus kas berhasil dicatat", "success");
   }catch(err){
     if(!navigator.onLine || err.message?.includes("fetch") || err.message?.includes("NetworkError")){
       let finalBlob=surplusSelectedBlob;
@@ -1080,7 +1293,7 @@ async function saveSurplus(ev){
       e.result.classList.add("hidden");
       e.success.classList.remove("hidden");
       e.success.scrollIntoView({behavior:"smooth"});
-      toast("Surplus tersimpan di antrean offline!");
+      toast("Surplus disimpan di antrean offline", "warning");
     } else {
       toast(err.message||"Gagal menyimpan surplus");
     }
@@ -1095,7 +1308,7 @@ async function saveSurplus(ev){
 async function saveCashout(ev){
   ev.preventDefault();
   const cAmount=Number(e.cashoutAmount.value.replace(/\D/g,""));
-  if(!cAmount)return toast("Masukkan nominal tukar cash yang benar");
+  if(!cAmount)return toast("Masukkan nominal tukar cash yang valid", "warning");
 
   const cNote=(e.cashoutNote.value||"").trim();
   const cDate=e.cashoutDate.value||localDate();
@@ -1129,7 +1342,7 @@ async function saveCashout(ev){
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
-    toast("Tukar cash tersimpan di antrean offline!");
+    toast("Tukar cash disimpan di antrean offline", "warning");
     if(e.saveCashoutBtn){
       e.saveCashoutBtn.disabled=false;
       e.saveCashoutBtn.textContent="Simpan Tukar Cash";
@@ -1172,7 +1385,7 @@ async function saveCashout(ev){
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
-    toast("Tukar cash berhasil dicatat!");
+    toast("Tukar cash berhasil dicatat", "success");
   }catch(err){
     if(!navigator.onLine || err.message?.includes("fetch") || err.message?.includes("NetworkError")){
       let finalBlob=cashoutSelectedBlob;
@@ -1195,7 +1408,7 @@ async function saveCashout(ev){
       e.result.classList.add("hidden");
       e.success.classList.remove("hidden");
       e.success.scrollIntoView({behavior:"smooth"});
-      toast("Tukar cash tersimpan di antrean offline!");
+      toast("Tukar cash disimpan di antrean offline", "warning");
     } else {
       toast(err.message||"Gagal menyimpan tukar cash");
     }
@@ -1297,7 +1510,7 @@ function openRevisedModal(){
 async function saveRevised(ev){
   ev.preventDefault();
   const rAmount=Number(e.revisedAmount.value.replace(/\D/g,""));
-  if(!rAmount)return toast("Masukkan nominal transaksi yang benar");
+  if(!rAmount)return toast("Masukkan nominal transaksi yang valid", "warning");
 
   const rNote=(e.revisedNote.value||"").trim();
   const rDate=e.revisedDate.value||localDate();
@@ -1330,7 +1543,7 @@ async function saveRevised(ev){
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
-    toast("Transaksi revisi tersimpan di antrean offline!");
+    toast("Transaksi revisi disimpan di antrean offline", "warning");
     if(e.saveRevisedBtn){
       e.saveRevisedBtn.disabled=false;
       e.saveRevisedBtn.textContent="Simpan Transaksi Revisi";
@@ -1372,7 +1585,7 @@ async function saveRevised(ev){
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
-    toast("Transaksi revisi berhasil dicatat!");
+    toast("Transaksi revisi berhasil dicatat", "success");
   }catch(err){
     if(!navigator.onLine || err.message?.includes("fetch") || err.message?.includes("NetworkError")){
       let finalBlob=revisedSelectedBlob;
@@ -1395,7 +1608,7 @@ async function saveRevised(ev){
       e.result.classList.add("hidden");
       e.success.classList.remove("hidden");
       e.success.scrollIntoView({behavior:"smooth"});
-      toast("Transaksi revisi tersimpan di antrean offline!");
+      toast("Transaksi revisi disimpan di antrean offline", "warning");
     } else {
       toast(err.message||"Gagal menyimpan transaksi revisi");
     }
@@ -1497,10 +1710,10 @@ function openExpenseModal(){
 async function saveExpense(ev){
   ev.preventDefault();
   const expAmount=Number(e.expenseAmount.value.replace(/\D/g,""));
-  if(!expAmount)return toast("Masukkan nominal pengeluaran yang benar");
+  if(!expAmount)return toast("Masukkan nominal pengeluaran yang valid", "warning");
 
   const expNote=(e.expenseNote.value||"").trim();
-  if(!expNote)return toast("Keterangan belanja wajib diisi!");
+  if(!expNote)return toast("Keterangan belanja wajib diisi", "warning");
 
   const expDate=e.expenseDate.value||localDate();
   const expTime=e.expenseTime.value||currentJakartaTime();
@@ -1533,7 +1746,7 @@ async function saveExpense(ev){
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
-    toast("Struk cash tersimpan di antrean offline!");
+    toast("Struk cash disimpan di antrean offline", "warning");
     if(e.saveExpenseBtn){
       e.saveExpenseBtn.disabled=false;
       e.saveExpenseBtn.textContent="Simpan Struk Cash";
@@ -1575,7 +1788,7 @@ async function saveExpense(ev){
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
-    toast("Struk belanja cash berhasil dicatat!");
+    toast("Struk belanja cash berhasil dicatat", "success");
   }catch(err){
     if(!navigator.onLine || err.message?.includes("fetch") || err.message?.includes("NetworkError")){
       let finalBlob=expenseSelectedBlob;
@@ -1599,7 +1812,7 @@ async function saveExpense(ev){
       e.result.classList.add("hidden");
       e.success.classList.remove("hidden");
       e.success.scrollIntoView({behavior:"smooth"});
-      toast("Struk cash tersimpan di antrean offline!");
+      toast("Struk cash disimpan di antrean offline", "warning");
     } else {
       toast(err.message||"Gagal menyimpan struk cash");
     }
@@ -1617,7 +1830,14 @@ function showPage(page){
   e.historyPage.classList.toggle("hidden",!h);
   e.scanTab.classList.toggle("active",!h);
   e.historyTab.classList.toggle("active",h);
-  if(h)loadHistory();
+  if(h){
+    stopCamera();
+    loadHistory();
+  }else{
+    if(e.result.classList.contains("hidden")&&e.success.classList.contains("hidden")){
+      resumeLiveCamera();
+    }
+  }
 }
 
 function titleDate(d){return new Intl.DateTimeFormat("id-ID",{timeZone:"UTC",day:"numeric",month:"long",year:"numeric"}).format(new Date(`${d}T00:00:00Z`));}
@@ -1663,18 +1883,18 @@ async function handleSaveEdit(ev){
   ev.preventDefault();
   if(!pendingEditRecord)return;
   const newAmount=Number(e.editAmount.value.replace(/\D/g,""));
-  if(!newAmount)return toast("Nominal rupiah tidak valid");
+  if(!newAmount)return toast("Nominal rupiah tidak valid", "warning");
   const newDate=(e.editDate?.value||"").trim();
-  if(!newDate)return toast("Tanggal transaksi wajib diisi");
+  if(!newDate)return toast("Tanggal transaksi wajib diisi", "warning");
   const newTime=(e.editTime?.value||"").trim();
-  if(!newTime)return toast("Jam transaksi wajib diisi");
+  if(!newTime)return toast("Jam transaksi wajib diisi", "warning");
   const newIsSurplus=e.editIsSurplus?e.editIsSurplus.checked:false;
   const newIsCashout=e.editIsCashout?e.editIsCashout.checked:false;
   const newIsRevised=e.editIsRevised?e.editIsRevised.checked:false;
   const newIsExpense=e.editIsExpense?e.editIsExpense.checked:false;
   const newNote=(e.editNote?.value||"").trim();
   const pin=(e.editPinInput?.value||"").trim();
-  if(!pin)return toast("PIN 6-digit wajib diisi");
+  if(!pin)return toast("PIN 6-digit wajib diisi", "warning");
 
   if(e.saveEditBtn){
     e.saveEditBtn.disabled=true;
@@ -1699,7 +1919,7 @@ async function handleSaveEdit(ev){
     }
     sessionStorage.setItem("deletePin",pin);
     if(e.editDialog)e.editDialog.close();
-    toast("Transaksi berhasil diperbarui");
+    toast("Perubahan transaksi berhasil disimpan", "success");
     pendingEditRecord=null;
     if(newDate && e.historyDate && e.historyDate.value!==newDate){
       e.historyDate.value=newDate;
@@ -1731,7 +1951,7 @@ async function handleConfirmDelete(x){
   const pin=e.deletePinInput?.value;
   const password=e.deletePasswordInput?.value;
   if(!pin||!password){
-    return toast("Wajib mengisi Verifikasi 1 (PIN) & Verifikasi 2 (Password Admin)");
+    return toast("Wajib mengisi PIN dan Password Admin", "warning");
   }
   try{
     const response=await fetch("/api/receipts",{
@@ -1754,7 +1974,7 @@ async function handleConfirmDelete(x){
     sessionStorage.setItem("deletePin",pin);
     sessionStorage.setItem("deletePassword",password);
     if(e.deleteDialog)e.deleteDialog.close();
-    toast("Transaksi dihapus (Verifikasi 2-Langkah Sukses)");
+    toast("Transaksi berhasil dihapus", "success");
     pendingDeleteRecord=null;
     await loadHistory();
   }catch(err){
@@ -1859,9 +2079,38 @@ async function loadHistory(init=false){
       const adminActionsHtml=data.role==="admin"?`<button class="edit-record" type="button" aria-label="Edit transaksi">Edit</button><button class="delete-record" type="button" aria-label="Hapus transaksi">Hapus</button>`:"";
 
       item.innerHTML=`<img class="history-item-thumb" src="${r.imageUrl}" alt="Bukti ${isExpense?"Struk Belanja Cash":isSurplus?"Surplus":isCashout?"Tukar Cash":"QRIS"}" loading="lazy"><div class="history-item-body"><div class="history-item-header"><div class="history-item-meta"><time class="history-item-time">${time} WIB</time>${expenseBadgeHtml}${surplusBadgeHtml}${cashoutBadgeHtml}${revisedBadgeHtml}</div><div class="history-item-actions"><button class="copy-record" type="button" title="Salin transaksi ini">Salin</button>${adminActionsHtml}</div></div><strong class="history-item-amount">${isExpense?"-":""}Rp${rupiah(r.amount)}</strong>${noteHtml}<a class="history-item-link" href="${r.imageUrl}" target="_blank" rel="noopener"><span>Lihat foto bukti</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></div>`;
+
+      const previewMeta = {
+        title: isExpense ? "Nota Belanja Cash" : isSurplus ? "Bukti Surplus Kas" : isCashout ? "Bukti Tukar Cash" : isRevised ? "Bukti Transaksi Revisi" : "Bukti Pembayaran QRIS",
+        amount: r.amount,
+        time: time,
+        date: r.date,
+        isExpense: isExpense,
+        badgeLabel: isExpense ? "STRUK CASH" : isSurplus ? "SURPLUS" : isCashout ? "TUKAR CASH" : isRevised ? "REVISI" : "QRIS",
+        badgeClass: isExpense ? "badge-expense" : isSurplus ? "badge-surplus" : isCashout ? "badge-cashout" : isRevised ? "badge-revised" : "",
+        note: r.note
+      };
+
+      const thumbEl = item.querySelector(".history-item-thumb");
+      if (thumbEl) {
+        thumbEl.onclick = (ev) => {
+          ev.preventDefault();
+          openImagePreview(r.imageUrl, previewMeta);
+        };
+      }
+      const linkEl = item.querySelector(".history-item-link");
+      if (linkEl) {
+        linkEl.onclick = (ev) => {
+          if (loadSettings().imagePreviewMode === "in_app") {
+            ev.preventDefault();
+            openImagePreview(r.imageUrl, previewMeta);
+          }
+        };
+      }
+
       item.querySelector(".copy-record").onclick=async()=>{
         await navigator.clipboard.writeText(`${line} gambar ${r.imageUrl}`);
-        toast("Transaksi disalin");
+        toast("Rincian transaksi berhasil disalin", "success");
       };
       if(data.role==="admin"){
         item.querySelector(".edit-record").onclick=()=>openEditRecord(r);
@@ -1908,7 +2157,7 @@ async function loadHistory(init=false){
         if(!duplicateGroups.length)return;
         const text=`*Pengelompokan Transaksi Sama (${titleDate(date)})*\n`+duplicateGroups.map(g=>`• ${g.count}x Rp${rupiah(g.amount)} = Rp${rupiah(g.total)} (Jam: ${g.times.join(", ")})`).join("\n");
         await navigator.clipboard.writeText(text);
-        toast("Pengelompokan nominal disalin");
+        toast("Ringkasan nominal berhasil disalin", "success");
       };
     }
 
@@ -1954,7 +2203,7 @@ async function loadHistory(init=false){
     if(e.recapDivider)e.recapDivider.style.display=hasSpecialRows?"block":"none";
 
     e.recapBox.classList.remove("hidden");
-  }catch(x){toast(x.message||"Riwayat gagal dimuat");}
+  }catch(x){toast(x.message||"Gagal memuat riwayat transaksi", "error");}
   finally{e.historyLoading.classList.add("hidden");}
 }
 
@@ -1979,7 +2228,7 @@ if(e.cleanNowBtn){
       const res=await fetch("/api/cleanup",{method:"POST"});
       const data=await res.json();
       if(!res.ok) throw new Error(data.error||"Gagal membersihkan data");
-      toast(`Pembersihan sukses: ${data.deletedRecords||0} catatan & ${data.deletedImages||0} foto lama dibersihkan.`);
+      toast(`Pembersihan selesai: ${data.deletedRecords||0} catatan dan ${data.deletedImages||0} foto lama dibersihkan`, "success");
     }catch(err){
       toast(err.message||"Gagal melakukan pembersihan");
     }finally{
@@ -1989,8 +2238,8 @@ if(e.cleanNowBtn){
   };
 }
 
-e.startCamera.onclick=startCamera;
-e.capture.onclick=()=>useSource(e.camera,"camera");
+e.startCamera.onclick=()=>startCamera();
+e.capture.onclick=captureFromCamera;
 e.rescan.onclick=reset;
 e.again.onclick=reset;
 e.save.onclick=save;
@@ -2416,9 +2665,9 @@ if(e.toggleConfirmExpenseBtn){
 }
 
 e.share.onclick=()=>shareText(e.shareText.textContent);
-e.copy.onclick=async()=>{await navigator.clipboard.writeText(e.shareText.textContent);toast("Teks disalin");};
+e.copy.onclick=async()=>{await navigator.clipboard.writeText(e.shareText.textContent);toast("Teks struk berhasil disalin","success");};
 e.shareRecap.onclick=()=>shareText(recapText);
-e.copyRecap.onclick=async()=>{await navigator.clipboard.writeText(recapText);toast("Rekap disalin");};
+e.copyRecap.onclick=async()=>{await navigator.clipboard.writeText(recapText);toast("Rekap harian berhasil disalin","success");};
 if(e.editAmount){
   e.editAmount.oninput=()=>{const d=e.editAmount.value.replace(/\D/g,"");e.editAmount.value=d?rupiah(Number(d)):"";};
 }
@@ -2473,7 +2722,7 @@ window.onHardwareCameraCapture = function(dataUrl) {
   const img = new Image();
   img.onload = () => {
     useSource(img, "native_camera");
-    toast("Foto kamera belakang berhasil dimuat!");
+    toast("Foto kamera berhasil dimuat", "success");
     if (window.QriskasAndroid && typeof window.QriskasAndroid.vibrate === "function") {
       window.QriskasAndroid.vibrate(50);
     } else if (window.AndroidBridge && typeof window.AndroidBridge.vibrate === "function") {
@@ -2553,7 +2802,7 @@ async function syncOfflineQueue() {
           break;
         }
       }
-      toast("Sinkronisasi transaksi offline selesai!");
+      toast("Sinkronisasi transaksi offline selesai", "success");
       if (!e.historyPage.classList.contains("hidden")) {
         loadHistory();
       }
@@ -2562,6 +2811,207 @@ async function syncOfflineQueue() {
     console.warn("Offline sync error:", err);
   }
 }
+
+
+// ==================== IN-APP LIGHTWEIGHT IMAGE PREVIEW ====================
+let currentPreviewUrl = "";
+
+function openImagePreview(url, meta = {}) {
+  if (!url) return;
+  const s = loadSettings();
+  if (s.imagePreviewMode === "browser") {
+    window.open(url, "_blank");
+    return;
+  }
+  currentPreviewUrl = url;
+  if (e.imagePreviewModalImg) {
+    e.imagePreviewModalImg.src = url;
+  }
+  if (e.imagePreviewTitle) {
+    e.imagePreviewTitle.textContent = meta.title || "Foto Bukti Transaksi";
+  }
+  if (e.imagePreviewSubtitle) {
+    const parts = [];
+    if (meta.time) parts.push(meta.time + " WIB");
+    if (meta.date) parts.push(meta.date);
+    e.imagePreviewSubtitle.textContent = parts.join(" • ") || "Dokumentasi Struk Digital";
+  }
+  if (e.imagePreviewMeta) {
+    let chips = "";
+    if (meta.amount) {
+      const isExpense = meta.isExpense;
+      chips += `<span class="badge-preview-amount">${isExpense ? "-" : ""}Rp${rupiah(meta.amount)}</span>`;
+    }
+    if (meta.badgeLabel) {
+      chips += `<span class="badge-preview-type ${meta.badgeClass || ''}">${escapeHtml(meta.badgeLabel)}</span>`;
+    }
+    if (meta.note) {
+      chips += `<span class="badge-preview-note">${escapeHtml(meta.note)}</span>`;
+    }
+    e.imagePreviewMeta.innerHTML = chips;
+    e.imagePreviewMeta.style.display = chips ? "flex" : "none";
+  }
+  if (e.imagePreviewDialog) {
+    e.imagePreviewDialog.showModal();
+  }
+}
+
+if (e.imagePreviewCloseBtn) {
+  e.imagePreviewCloseBtn.addEventListener("click", () => {
+    if (e.imagePreviewDialog) e.imagePreviewDialog.close();
+  });
+}
+
+if (e.imagePreviewOpenBrowserBtn) {
+  e.imagePreviewOpenBrowserBtn.addEventListener("click", () => {
+    if (currentPreviewUrl) {
+      window.open(currentPreviewUrl, "_blank");
+    }
+  });
+}
+
+if (e.imagePreviewCopyLinkBtn) {
+  e.imagePreviewCopyLinkBtn.addEventListener("click", async () => {
+    if (!currentPreviewUrl) return;
+    try {
+      await navigator.clipboard.writeText(currentPreviewUrl);
+      toast("Link foto berhasil disalin", "success");
+    } catch (_) {
+      toast("Gagal menyalin link foto", "error");
+    }
+  });
+}
+
+if (e.imagePreviewDialog) {
+  e.imagePreviewDialog.addEventListener("click", (ev) => {
+    const rect = e.imagePreviewDialog.getBoundingClientRect();
+    const isInDialog = (
+      rect.top <= ev.clientY &&
+      ev.clientY <= rect.top + rect.height &&
+      rect.left <= ev.clientX &&
+      ev.clientX <= rect.left + rect.width
+    );
+    if (!isInDialog) {
+      e.imagePreviewDialog.close();
+    }
+  });
+}
+
+if (e.preview) {
+  e.preview.style.cursor = "pointer";
+  e.preview.title = "Klik untuk memperbesar pratinjau foto";
+  e.preview.addEventListener("click", () => {
+    if (e.preview.src) {
+      openImagePreview(e.preview.src, {
+        title: "Pratinjau Hasil Foto",
+        time: e.displayTime?.value || "",
+        date: e.displayDate?.value || "",
+        amount: amount,
+        note: (surplusMode || cashoutMode || expenseMode) ? currentNote : ""
+      });
+    }
+  });
+}
+
+// ==================== WEB APP INSTALL BANNER & LATEST RELEASE ====================
+let deferredInstallPrompt = null;
+const FALLBACK_APK_URL = "https://github.com/Ramadani1t/QRISKas/releases/latest/download/qriskas-release.apk";
+
+window.addEventListener("beforeinstallprompt", (ev) => {
+  ev.preventDefault();
+  deferredInstallPrompt = ev;
+  if (e.webInstallPwaBtn) {
+    e.webInstallPwaBtn.classList.remove("hidden");
+  }
+  checkAndDisplayWebInstallBanner();
+});
+
+if (e.webInstallPwaBtn) {
+  e.webInstallPwaBtn.addEventListener("click", async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    if (outcome === "accepted") {
+      if (e.webInstallBanner) e.webInstallBanner.classList.add("hidden");
+      toast("Aplikasi sedang dipasang", "success");
+    }
+    deferredInstallPrompt = null;
+  });
+}
+
+if (e.dismissInstallBannerBtn) {
+  e.dismissInstallBannerBtn.addEventListener("click", () => {
+    if (e.webInstallBanner) e.webInstallBanner.classList.add("hidden");
+    sessionStorage.setItem("dismissedInstallBanner", "1");
+  });
+}
+
+async function fetchLatestGitHubReleaseMeta() {
+  try {
+    const cached = localStorage.getItem("cachedReleaseMeta");
+    const cachedTime = Number(localStorage.getItem("cachedReleaseMetaTime") || 0);
+    if (cached && (Date.now() - cachedTime < 3600000 * 4)) {
+      applyReleaseMeta(JSON.parse(cached));
+      return;
+    }
+    const res = await fetch("https://api.github.com/repos/Ramadani1t/QRISKas/releases/latest");
+    if (!res.ok) return;
+    const data = await res.json();
+    let apkUrl = FALLBACK_APK_URL;
+    let apkSize = 0;
+    if (Array.isArray(data.assets)) {
+      const apkAsset = data.assets.find(a => (a.name || "").endsWith(".apk"));
+      if (apkAsset) {
+        apkUrl = apkAsset.browser_download_url;
+        apkSize = apkAsset.size;
+      }
+    }
+    const releaseMeta = {
+      tag_name: data.tag_name || "v1.2.0",
+      name: data.name || "QRIS Kas",
+      body: data.body || "",
+      apkUrl,
+      apkSize
+    };
+    localStorage.setItem("cachedReleaseMeta", JSON.stringify(releaseMeta));
+    localStorage.setItem("cachedReleaseMetaTime", String(Date.now()));
+    applyReleaseMeta(releaseMeta);
+  } catch (_) {}
+}
+
+function applyReleaseMeta(meta) {
+  if (!meta) return;
+  if (e.webInstallVersionBadge && meta.tag_name) {
+    e.webInstallVersionBadge.textContent = meta.tag_name;
+  }
+  if (e.webInstallApkBtn && meta.apkUrl) {
+    e.webInstallApkBtn.href = meta.apkUrl;
+  }
+  if (e.webInstallApkBtnText && meta.tag_name) {
+    e.webInstallApkBtnText.textContent = `Unduh APK (${meta.tag_name})`;
+  }
+}
+
+function checkAndDisplayWebInstallBanner() {
+  const isAndroidApp = Boolean(window.__isAndroidApp || window.QriskasAndroid || window.AndroidBridge);
+  const isStandalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+  if (isAndroidApp || isStandalone) return;
+
+  const s = loadSettings();
+  if (s.installBannerEnabled === false) return;
+  if (sessionStorage.getItem("dismissedInstallBanner") === "1") return;
+
+  if (e.webInstallBanner) {
+    setTimeout(() => {
+      if (sessionStorage.getItem("dismissedInstallBanner") !== "1" && loadSettings().installBannerEnabled !== false) {
+        e.webInstallBanner.classList.remove("hidden");
+      }
+    }, 1800);
+  }
+}
+
+fetchLatestGitHubReleaseMeta();
+setTimeout(checkAndDisplayWebInstallBanner, 1000);
 
 window.addEventListener("online", syncOfflineQueue);
 // ==================== IN-APP UPDATE KHUSUS MOBILE ====================
@@ -2595,10 +3045,10 @@ window.onAppUpdateDetected = function(data) {
     }
 
     if (data.isManual) {
-      toast("Pembaruan versi baru tersedia!");
+      toast("Versi baru aplikasi tersedia", "info");
     }
   } else if (data.isManual) {
-    toast(`Aplikasi sudah versi terbaru (${data.currentVersion || "v1.2.0"})`);
+    toast(`Aplikasi sudah versi terbaru (${data.currentVersion || "v1.2.0"})`, "info");
     if (e.mobileUpdateHelpText) {
       e.mobileUpdateHelpText.textContent = "Aplikasi Anda sudah menggunakan versi terbaru.";
       e.mobileUpdateHelpText.style.color = "var(--muted)";
@@ -2661,10 +3111,10 @@ async function checkGitHubReleaseFallback() {
         currentVersion: currentVer
       });
     } else {
-      toast("Gagal memeriksa pembaruan");
+      toast("Gagal memeriksa pembaruan", "error");
     }
   } catch (_) {
-    toast("Gagal terhubung ke server pembaruan");
+    toast("Gagal terhubung ke server pembaruan", "error");
   } finally {
     if (e.checkMobileUpdateBtnText) e.checkMobileUpdateBtnText.textContent = "Periksa Pembaruan Versi";
     if (e.checkMobileUpdateBtn) e.checkMobileUpdateBtn.disabled = false;
@@ -2690,10 +3140,10 @@ if (e.checkMobileUpdateBtn) {
 if (e.executeMobileUpdateBtn) {
   e.executeMobileUpdateBtn.addEventListener("click", () => {
     if (!pendingMobileUpdateInfo || !pendingMobileUpdateInfo.apkUrl) {
-      toast("Link unduhan APK belum tersedia.");
+      toast("Link unduhan APK belum tersedia", "warning");
       return;
     }
-    toast("Mengunduh update APK...");
+    toast("Mengunduh file pembaruan APK", "loading");
     if (window.QriskasAndroid && typeof window.QriskasAndroid.downloadAndInstallUpdate === "function") {
       window.QriskasAndroid.downloadAndInstallUpdate(
         pendingMobileUpdateInfo.apkUrl,

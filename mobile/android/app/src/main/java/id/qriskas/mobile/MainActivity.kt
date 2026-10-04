@@ -727,7 +727,7 @@ class MainActivity : AppCompatActivity() {
                 <div class="logo">Q</div>
                 <h1>QRISKAS Mobile</h1>
                 <p>Tidak ada koneksi internet. Pastikan kamu terhubung ke WiFi atau data seluler.</p>
-                <button onclick="location.reload()">🔄 Coba Lagi</button>
+                <button onclick="location.reload()">Coba Lagi</button>
             </body>
             </html>
         """.trimIndent()

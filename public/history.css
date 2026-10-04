@@ -76,6 +76,8 @@
 }
 
 .history-item-thumb {
+  cursor: pointer;
+  transition: transform .15s ease, border-color .15s ease;
   width: 52px;
   height: 52px;
   min-width: 52px;
