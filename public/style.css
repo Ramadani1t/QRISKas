@@ -172,21 +172,6 @@ h1 {
   box-shadow: 0 16px 45px rgba(0, 0, 0, 0.65);
 }
 
-.camera-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: #fff;
-  opacity: 0;
-  pointer-events: none;
-  z-index: 10;
-  transition: opacity 0.05s ease;
-}
-
-.camera-card.flash::after {
-  opacity: 0.85;
-  transition: opacity 0.28s ease-out;
-}
 
 .camera-card.mirrored video {
   transform: scaleX(-1);
@@ -401,6 +386,11 @@ video {
 .capture-btn {
   font-size: 15px;
   letter-spacing: 0.01em;
+}
+
+.capture-btn:active {
+  transform: scale(0.96);
+  filter: brightness(1.12);
 }
 
 .input-options-grid {

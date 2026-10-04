@@ -632,7 +632,7 @@ async function startCameraInner(silent){
   }
 }
 
-// Jepret dari kamera live dengan efek shutter + getar singkat
+// Jepret dari kamera live: respon instan, haptic feedback, tanpa efek flash macet/freeze
 async function captureFromCamera(){
   if(capturing)return;
   if(!stream||!e.camera.videoWidth){
@@ -640,19 +640,13 @@ async function captureFromCamera(){
     return;
   }
   capturing=true;
-  e.capture.disabled=true;
-  const card=camCard();
-  if(card){
-    card.classList.remove("flash");
-    void card.offsetWidth;
-    card.classList.add("flash");
-  }
-  hapticTap(30);
+  if(e.capture) e.capture.disabled=true;
+  hapticTap(35);
   try{
     await useSource(e.camera,"camera");
   }finally{
     capturing=false;
-    e.capture.disabled=!stream;
+    if(e.capture) e.capture.disabled=!stream;
   }
 }
 
@@ -724,15 +718,21 @@ function updateExpenseToggleUI(){
 
 async function useSource(s, source="camera"){
   inputSource=source;
-  // Batasi sisi terpanjang agar teks nominal tetap tajam namun ukuran upload tetap ringan
-  const MAX_EDGE=1600;
-  const w=s.videoWidth||s.naturalWidth,h=s.videoHeight||s.naturalHeight,z=Math.min(1,MAX_EDGE/Math.max(w,h));
+  // Resolusi 1280px sangat tajam untuk struk kasir, namun 2x lebih cepat dan bebas freeze di HP kasir
+  const MAX_EDGE=1280;
+  const w=s.videoWidth||s.naturalWidth;
+  const h=s.videoHeight||s.naturalHeight;
+  if(!w || !h){
+    toast("Kamera belum siap memuat frame. Coba ulangi.","warning");
+    return;
+  }
+  const z=Math.min(1,MAX_EDGE/Math.max(w,h));
   e.canvas.width=Math.round(w*z);e.canvas.height=Math.round(h*z);
   const ctx=e.canvas.getContext("2d");
   ctx.imageSmoothingEnabled=true;
-  ctx.imageSmoothingQuality="high";
+  ctx.imageSmoothingQuality="medium";
   ctx.drawImage(s,0,0,e.canvas.width,e.canvas.height);
-  imageBlob=await canvasBlob(e.canvas,.8);
+  imageBlob=await canvasBlob(e.canvas,.78);
 
   // === DELAY SAVE MODE: Jika aktif, langsung upload foto sebagai pending & kembali ke kamera ===
   const settings=loadSettings();
@@ -741,9 +741,7 @@ async function useSource(s, source="camera"){
     return;
   }
 
-  // Bekukan frame kamera live selama konfirmasi (dilanjutkan lagi saat reset)
-  if(source==="camera"){try{e.camera.pause();}catch(_){}}
-
+  // Tidak mem-pause e.camera agar pipeline kamera hardware Android tidak macet/freeze
   e.preview.src=URL.createObjectURL(imageBlob);
   amount=0;e.amount.textContent="0";
   
