@@ -447,19 +447,19 @@ class MainActivity : AppCompatActivity() {
             }
             BitmapFactory.decodeFile(photoFile.absolutePath, boundsOptions)
 
-            val maxDim = 1600
+            val maxDim = 1280
             var inSampleSize = 1
-            if (boundsOptions.outHeight > maxDim || boundsOptions.outWidth > maxDim) {
-                val halfHeight = boundsOptions.outHeight / 2
-                val halfWidth = boundsOptions.outWidth / 2
-                while (halfHeight / inSampleSize >= maxDim && halfWidth / inSampleSize >= maxDim) {
+            val rawH = boundsOptions.outHeight
+            val rawW = boundsOptions.outWidth
+            if (rawH > maxDim || rawW > maxDim) {
+                while ((rawH / (inSampleSize * 2)) >= maxDim || (rawW / (inSampleSize * 2)) >= maxDim) {
                     inSampleSize *= 2
                 }
             }
 
             val decodeOptions = BitmapFactory.Options().apply {
                 this.inSampleSize = inSampleSize
-                // RGB_565: 2 bytes/pixel (vs ARGB_8888: 4 bytes) → decode 2x lebih cepat
+                // RGB_565: 2 bytes/pixel (vs ARGB_8888: 4 bytes) → decode jauh lebih cepat & hemat RAM
                 inPreferredConfig = Bitmap.Config.RGB_565
             }
             val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath, decodeOptions) ?: return null
@@ -475,6 +475,14 @@ class MainActivity : AppCompatActivity() {
                 ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.preScale(1f, -1f)
             }
 
+            // Downscale presisi jika masih lebih besar dari maxDim
+            val curW = if (orientation == ExifInterface.ORIENTATION_ROTATE_90 || orientation == ExifInterface.ORIENTATION_ROTATE_270) bitmap.height else bitmap.width
+            val curH = if (orientation == ExifInterface.ORIENTATION_ROTATE_90 || orientation == ExifInterface.ORIENTATION_ROTATE_270) bitmap.width else bitmap.height
+            if (Math.max(curW, curH) > maxDim) {
+                val scale = maxDim.toFloat() / Math.max(curW, curH).toFloat()
+                matrix.postScale(scale, scale)
+            }
+
             val rotatedBitmap = if (!matrix.isIdentity) {
                 Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true).also {
                     if (it != bitmap) bitmap.recycle()
@@ -484,7 +492,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             val outputStream = ByteArrayOutputStream()
-            rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
+            rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
             rotatedBitmap.recycle()
             val byteArray = outputStream.toByteArray()
             val base64 = Base64.encodeToString(byteArray, Base64.NO_WRAP)

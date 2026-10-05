@@ -67,6 +67,22 @@ const formatReceiptLine=(time,amt,isSurplus,isCashout,isRevised,note,isExpense)=
   const tagStr=tags.length?` (${tags.join(", ")})`:"";
   return `${time} - ${rupiah(amt)}${tagStr}`;
 };
+// Versi ringkas untuk teks rekap/setoran: label pendek + catatan dipotong
+const shortNote=(note,max=18)=>{
+  const n=String(note||"").replace(/\s+/g," ").trim();
+  return n.length>max?n.slice(0,max-1).trimEnd()+"…":n;
+};
+const formatReceiptLineCompact=(time,amt,isSurplus,isCashout,isRevised,note,isExpense)=>{
+  const tags=[];
+  const n=shortNote(note);
+  if(isExpense)tags.push(n?`Cash: ${n}`:"Cash");
+  else if(isSurplus)tags.push(n?`Surplus: ${n}`:"Surplus");
+  else if(isCashout)tags.push(n?`Tukar: ${n}`:"Tukar");
+  else if(n)tags.push(n);
+  if(isRevised)tags.push("Rev");
+  const tagStr=tags.length?` (${tags.join(", ")})`:"";
+  return `${time} - ${rupiah(amt)}${tagStr}`;
+};
 // === TOAST NOTIFIKASI (tipe: success | error | warning | info | loading) ===
 const TOAST_META={
   success:{title:"Berhasil",icon:'<polyline points="20 6 9 17 4 12"/>'},
@@ -148,7 +164,8 @@ function loadSettings(){
   const delaySaveEnabled=localStorage.getItem("delaySaveEnabled")==="true";
   const imagePreviewMode=localStorage.getItem("imagePreviewMode")||"in_app";
   const installBannerEnabled=localStorage.getItem("installBannerEnabled")!=="false";
-  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled,expenseEnabled,delaySaveEnabled,imagePreviewMode,installBannerEnabled};
+  const recapCompact=localStorage.getItem("recapCompact")==="true";
+  return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled,expenseEnabled,delaySaveEnabled,imagePreviewMode,installBannerEnabled,recapCompact};
 }
 
 function applySettingsUI(s){
@@ -255,6 +272,8 @@ async function openSettingsModal(){
   if(e.settingRevisionEnabled)e.settingRevisionEnabled.checked=s.revisionEnabled;
   if(e.settingExpenseEnabled)e.settingExpenseEnabled.checked=s.expenseEnabled;
   if(e.settingGroupedEnabled)e.settingGroupedEnabled.checked=s.groupedEnabled;
+  const compactEl=document.getElementById("settingRecapCompact");
+  if(compactEl)compactEl.checked=s.recapCompact;
   if(e.settingDelaySaveEnabled)e.settingDelaySaveEnabled.checked=s.delaySaveEnabled;
 
   try{
@@ -333,6 +352,8 @@ async function saveSettings(ev){
   localStorage.setItem("revisionEnabled",String(revisionEnabled));
   localStorage.setItem("expenseEnabled",String(expenseEnabled));
   localStorage.setItem("groupedEnabled",String(groupedEnabled));
+  const compactEl=document.getElementById("settingRecapCompact");
+  if(compactEl)localStorage.setItem("recapCompact",String(compactEl.checked));
   localStorage.setItem("delaySaveEnabled",String(delaySaveEnabled));
   localStorage.setItem("imagePreviewMode",imagePreviewMode);
   localStorage.setItem("installBannerEnabled",String(installBannerEnabled));
@@ -360,14 +381,15 @@ function updateCamToggleBtnText(){
   e.toggleCamMode.innerHTML=`${iconSvg} <span>${isUser?"Kamera Depan":"Kamera Belakang"}</span>`;
 }
 
-async function getAllVideoInputDevices(){
+async function getAllVideoInputDevices(force=false){
   if(!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
+  if(!force && allVideoDevices.length) return allVideoDevices;
   try{
     const devices=await navigator.mediaDevices.enumerateDevices();
     allVideoDevices=devices.filter(d=>d.kind==="videoinput");
     return allVideoDevices;
   }catch(_){
-    return [];
+    return allVideoDevices;
   }
 }
 
@@ -385,10 +407,10 @@ async function toggleCamera(){
 }
 
 async function refreshVideoDevices(){
-  return await getAllVideoInputDevices();
+  return await getAllVideoInputDevices(true);
 }
 
-// === KAMERA LIVE: pilih lensa utama, cache deviceId, resolusi tinggi ===
+// === KAMERA LIVE: pilih lensa utama, cache deviceId, resolusi tinggi & cepat ===
 const CAM_RES={width:{ideal:1920},height:{ideal:1080}};
 const FRONT_LABEL_RE=/front|user|depan|selfie/i;
 const BACK_LABEL_RE=/back|rear|environment|belakang/i;
@@ -433,12 +455,12 @@ function releaseStream(){
   if(e.camera&&e.camera.srcObject)e.camera.srcObject=null;
 }
 
-// Saat izin pertama label belum ada, sehingga browser bisa memilih lensa ultra-wide.
-// Setelah izin diberikan, pindah sekali ke lensa utama bila berbeda.
+// Saat izin pertama label belum ada, setelah izin diberikan periksa apakah lensa perlu switch ke lensa utama
 async function upgradeToMainLens(s,mode){
   if(mode!=="environment")return s;
   const current=s.getVideoTracks()[0]?.getSettings?.().deviceId;
-  const best=pickDevicesFor(mode,await getAllVideoInputDevices())[0];
+  const devs=await getAllVideoInputDevices(true);
+  const best=pickDevicesFor(mode,devs)[0];
   if(!current||!best||best.deviceId===current||!BACK_LABEL_RE.test(best.label||""))return s;
   s.getTracks().forEach(t=>t.stop());
   try{
@@ -451,18 +473,26 @@ async function upgradeToMainLens(s,mode){
 async function getCameraStream(targetMode){
   const hadStream=Boolean(stream);
   releaseStream();
-  // Beri jeda singkat hanya jika hardware baru saja dilepas
-  if(hadStream)await new Promise(r=>setTimeout(r,120));
+  // Jeda sangat singkat (40ms) jika stream lama baru dilepas agar driver kamera siap
+  if(hadStream)await new Promise(r=>setTimeout(r,40));
 
   const cacheKey=`camDevice_${targetMode}`;
   const cachedId=localStorage.getItem(cacheKey);
-  const devices=await getAllVideoInputDevices();
   const constraintsList=[];
-  if(cachedId)constraintsList.push(byDevice(cachedId));
-  for(const d of pickDevicesFor(targetMode,devices)){
-    if(d.deviceId!==cachedId)constraintsList.push(byDevice(d.deviceId));
+
+  // 1. Prioritaskan deviceId cache jika sudah pernah tersimpan sebelumnya (instan)
+  if(cachedId){
+    constraintsList.push(byDevice(cachedId));
   }
-  constraintsList.push({video:{facingMode:{exact:targetMode},...CAM_RES},audio:false});
+
+  // 2. Jika ada device input yang sudah ter-enumerate dan valid
+  if(allVideoDevices.length){
+    for(const d of pickDevicesFor(targetMode,allVideoDevices)){
+      if(d.deviceId!==cachedId)constraintsList.push(byDevice(d.deviceId));
+    }
+  }
+
+  // 3. Fallback standar facingMode ideal
   constraintsList.push({video:{facingMode:{ideal:targetMode},...CAM_RES},audio:false});
   constraintsList.push({video:{facingMode:{ideal:targetMode}},audio:false});
 
@@ -473,19 +503,20 @@ async function getCameraStream(targetMode){
       if(!c.video.deviceId)s=await upgradeToMainLens(s,targetMode);
       const id=s.getVideoTracks()[0]?.getSettings?.().deviceId;
       if(id)localStorage.setItem(cacheKey,id);
+      // Refresh daftar device di background tanpa menghambat
+      getAllVideoInputDevices(true).catch(()=>{});
       return s;
     }catch(err){
       lastError=err;
       if(c.video.deviceId&&c.video.deviceId.exact===cachedId)localStorage.removeItem(cacheKey);
-      // Izin ditolak berlaku untuk semua kamera, tidak perlu mencoba constraint lain
       if(err&&(err.name==="NotAllowedError"||err.name==="SecurityError"))throw err;
     }
   }
 
-  // Fallback terakhir: stream umum untuk memicu izin, lalu cari kamera sesuai label
+  // Fallback terakhir: minta izin stream umum
   try{
     const tempStream=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
-    const best=pickDevicesFor(targetMode,await getAllVideoInputDevices())[0];
+    const best=pickDevicesFor(targetMode,await getAllVideoInputDevices(true))[0];
     if(best){
       tempStream.getTracks().forEach(t=>t.stop());
       return await navigator.mediaDevices.getUserMedia(byDevice(best.deviceId));
@@ -514,15 +545,20 @@ async function waitForVideoReady(v){
   try{await v.play();}catch(_){}
   if(v.videoWidth>0)return;
   await new Promise(resolve=>{
-    const done=()=>{
+    let done=false;
+    const finish=()=>{
+      if(done)return;
+      done=true;
       clearTimeout(timer);
-      v.removeEventListener("loadedmetadata",done);
-      v.removeEventListener("playing",done);
+      v.removeEventListener("loadedmetadata",finish);
+      v.removeEventListener("playing",finish);
+      v.removeEventListener("timeupdate",finish);
       resolve();
     };
-    const timer=setTimeout(done,2500);
-    v.addEventListener("loadedmetadata",done);
-    v.addEventListener("playing",done);
+    const timer=setTimeout(finish,1500);
+    v.addEventListener("loadedmetadata",finish,{once:true});
+    v.addEventListener("playing",finish,{once:true});
+    v.addEventListener("timeupdate",finish,{once:true});
   });
 }
 
@@ -593,8 +629,8 @@ async function startCameraInner(silent){
     e.camera.setAttribute("webkit-playsinline","true");
     e.camera.muted=true;
     e.camera.srcObject=stream;
-    await waitForVideoReady(e.camera);
 
+    // Tampilkan UI scanner langsung aktif begitu stream terhubung
     const track=stream.getVideoTracks()[0];
     applyTrackEnhancements(track);
     const facing=track?.getSettings?.().facingMode||currentFacingMode;
@@ -608,6 +644,9 @@ async function startCameraInner(silent){
     e.startCamera.classList.add("hidden");
     e.startCamera.textContent="Aktifkan Kamera";
     e.capture.disabled=false;
+
+    // Tunggu video play secara asinkron tanpa menahan UI
+    await waitForVideoReady(e.camera);
   }catch(err){
     console.warn("Live in-app camera error, falling back to hardware native camera:", err);
     releaseStream();
@@ -1997,13 +2036,12 @@ async function loadHistory(init=false){
     if(data.role==="guest"){
       e.scanTab.style.display="none";
       if(!e.scanPage.classList.contains("hidden")){
+        stopCamera();
         e.scanPage.classList.add("hidden");
         e.historyPage.classList.remove("hidden");
         e.scanTab.classList.remove("active");
         e.historyTab.classList.add("active");
       }
-    } else if(init && isSecureContext() && "mediaDevices" in navigator){
-      startCamera();
     }
 
     if(!data.records.length){
@@ -2045,12 +2083,13 @@ async function loadHistory(init=false){
 
       const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(r.savedAt));
       const line=formatReceiptLine(time,r.amount,isSurplus,isCashout,isRevised,r.note,isExpense);
+      const recapLine=loadSettings().recapCompact?formatReceiptLineCompact(time,r.amount,isSurplus,isCashout,isRevised,r.note,isExpense):line;
 
       if(isExpense){
-        expenseLines.push(`• [CASH] ${line}`);
+        expenseLines.push(`• ${recapLine}`);
         expenseLinks.push(`• Nota Cash: ${r.imageUrl}`);
       }else{
-        lines.push(`${lines.length+1}. ${line}`);
+        lines.push(`${lines.length+1}. ${recapLine}`);
         links.push(`${links.length+1}. ${r.imageUrl}`);
 
         if(!isSurplus && !isCashout){
@@ -2159,25 +2198,38 @@ async function loadHistory(init=false){
       };
     }
 
+    const compact=s.recapCompact;
     const recapBreakdown=[];
-    recapBreakdown.push(`*Total Penjualan: Rp${rupiah(salesTotal)}*`);
-    if(cashoutTotal>0){
-      recapBreakdown.push(`*Tukar Cash (Potong Laci): -Rp${rupiah(cashoutTotal)}*`);
-    }
-    if(surplusTotal>0){
-      recapBreakdown.push(`*Total Surplus: +Rp${rupiah(surplusTotal)}*`);
-    }
-    recapBreakdown.push(`*Grand Total QRIS Bank: Rp${rupiah(total)}*`);
-    if(revisedCount>0){
-      recapBreakdown.push(`*Catatan: ${revisedCount} transaksi berlabel Revisi/Susulan*`);
+    if(compact){
+      recapBreakdown.push(`*Penjualan: Rp${rupiah(salesTotal)}*`);
+      if(cashoutTotal>0)recapBreakdown.push(`*Tukar: -Rp${rupiah(cashoutTotal)}*`);
+      if(surplusTotal>0)recapBreakdown.push(`*Surplus: +Rp${rupiah(surplusTotal)}*`);
+      recapBreakdown.push(`*Total QRIS: Rp${rupiah(total)}*`);
+      if(revisedCount>0)recapBreakdown.push(`_${revisedCount} revisi_`);
+    }else{
+      recapBreakdown.push(`*Total Penjualan: Rp${rupiah(salesTotal)}*`);
+      if(cashoutTotal>0){
+        recapBreakdown.push(`*Tukar Cash (Potong Laci): -Rp${rupiah(cashoutTotal)}*`);
+      }
+      if(surplusTotal>0){
+        recapBreakdown.push(`*Total Surplus: +Rp${rupiah(surplusTotal)}*`);
+      }
+      recapBreakdown.push(`*Grand Total QRIS Bank: Rp${rupiah(total)}*`);
+      if(revisedCount>0){
+        recapBreakdown.push(`*Catatan: ${revisedCount} transaksi berlabel Revisi/Susulan*`);
+      }
     }
 
     let expenseRecapText="";
     if(expenseCount>0){
-      expenseRecapText=`\n\n*--- DOKUMENTASI STRUK BELANJA CASH (LACI FISIK) ---*\n${expenseLines.join("\n")}\n*Total Belanja Cash: Rp${rupiah(expenseTotal)} (${expenseCount} nota)*\n_(Biaya pengeluaran cash kasir, murni arsip & tidak memotong saldo QRIS bank)_\n\nFoto Nota Belanja:\n${expenseLinks.join("\n")}`;
+      expenseRecapText=compact
+        ?`\n\n*Belanja Cash (${expenseCount} nota): Rp${rupiah(expenseTotal)}*\n${expenseLines.join("\n")}\n\nNota:\n${expenseLinks.join("\n")}`
+        :`\n\n*--- DOKUMENTASI STRUK BELANJA CASH (LACI FISIK) ---*\n${expenseLines.map(l=>l.replace(/^• /,"• [CASH] ")).join("\n")}\n*Total Belanja Cash: Rp${rupiah(expenseTotal)} (${expenseCount} nota)*\n_(Biaya pengeluaran cash kasir, murni arsip & tidak memotong saldo QRIS bank)_\n\nFoto Nota Belanja:\n${expenseLinks.join("\n")}`;
     }
 
-    recapText=`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}\n\nLink bukti:\n${links.join("\n")}${expenseRecapText}`;
+    recapText=compact
+      ?`*REKAP QRIS ${titleDate(date)}*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}\n\nBukti:\n${links.join("\n")}${expenseRecapText}`
+      :`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}\n\nLink bukti:\n${links.join("\n")}${expenseRecapText}`;
     if(e.recapSalesTotal)e.recapSalesTotal.textContent=`Rp${rupiah(salesTotal)}`;
     if(e.recapSurplusTotal)e.recapSurplusTotal.textContent=`+Rp${rupiah(surplusTotal)}`;
     if(e.recapCashoutTotal)e.recapCashoutTotal.textContent=`-Rp${rupiah(cashoutTotal)}`;
@@ -2708,8 +2760,12 @@ if(e.pendingConfirmIsExpense){
   };
 }
 
-// Inisialisasi awal pengaturan & riwayat
+// Inisialisasi awal pengaturan & kamera secara paralel (instan, tidak menunggu request API riwayat)
 applySettingsUI(loadSettings());
+if(isSecureContext() && "mediaDevices" in navigator){
+  startCamera();
+  getAllVideoInputDevices(true).catch(()=>{});
+}
 e.historyDate.value=localDate();
 loadHistory(true);
 updatePendingBadge();
