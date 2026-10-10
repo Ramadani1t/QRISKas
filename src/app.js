@@ -909,6 +909,18 @@ async function loadPendingList(){
           imageKey: r.imageKey
         });
       };
+      const confirmBtn = item.querySelector(".confirm-pending-btn");
+      if (confirmBtn) {
+        confirmBtn.onclick = () => openPendingConfirm(r);
+      }
+      const itemBody = item.querySelector(".pending-item-body");
+      if (itemBody) {
+        itemBody.onclick = (ev) => {
+          if (!ev.target.closest("button")) {
+            openPendingConfirm(r);
+          }
+        };
+      }
       e.pendingList.append(item);
     }
   }catch(err){
@@ -936,11 +948,11 @@ function openPendingConfirm(record){
       });
     };
   }
-  if(e.pendingConfirmAmount) e.pendingConfirmAmount.value="";
-  if(e.pendingConfirmNote) e.pendingConfirmNote.value="";
-  if(e.pendingConfirmIsSurplus) e.pendingConfirmIsSurplus.checked=false;
-  if(e.pendingConfirmIsCashout) e.pendingConfirmIsCashout.checked=false;
-  if(e.pendingConfirmIsExpense) e.pendingConfirmIsExpense.checked=false;
+  if(e.pendingConfirmAmount) e.pendingConfirmAmount.value = record.amount ? rupiah(record.amount) : "";
+  if(e.pendingConfirmNote) e.pendingConfirmNote.value = record.note || "";
+  if(e.pendingConfirmIsSurplus) e.pendingConfirmIsSurplus.checked = Boolean(record.isSurplus);
+  if(e.pendingConfirmIsCashout) e.pendingConfirmIsCashout.checked = Boolean(record.isCashout);
+  if(e.pendingConfirmIsExpense) e.pendingConfirmIsExpense.checked = Boolean(record.isExpense);
   if(e.pendingConfirmDialog){
     e.pendingConfirmDialog.showModal();
     setTimeout(()=>e.pendingConfirmAmount?.focus(),100);
@@ -979,6 +991,7 @@ async function handleSavePendingConfirm(ev){
     pendingConfirmRecord=null;
     await loadPendingList();
     updatePendingBadge();
+    loadHistory(true);
   }catch(err){
     toast(err.message||"Gagal konfirmasi pending");
   }finally{
@@ -2778,6 +2791,8 @@ if(e.closePendingBtn) e.closePendingBtn.onclick=()=>{ if(e.pendingDialog) e.pend
 if(e.refreshPendingBtn) e.refreshPendingBtn.onclick=loadPendingList;
 if(e.savePendingConfirmBtn) e.savePendingConfirmBtn.onclick=handleSavePendingConfirm;
 if(e.cancelPendingConfirmBtn) e.cancelPendingConfirmBtn.onclick=()=>{ if(e.pendingConfirmDialog) e.pendingConfirmDialog.close(); };
+const pendingConfirmForm = document.getElementById("pendingConfirmForm");
+if(pendingConfirmForm) pendingConfirmForm.onsubmit=handleSavePendingConfirm;
 if(e.pendingConfirmAmount){
   e.pendingConfirmAmount.oninput=()=>{
     const d=e.pendingConfirmAmount.value.replace(/\D/g,"");
@@ -3028,100 +3043,35 @@ function openImagePreview(url, meta = {}) {
   }
 }
 
-if (e.imagePreviewZoomInBtn) {
-  e.imagePreviewZoomInBtn.addEventListener("click", () => {
-    previewScale = Math.min(4, previewScale + 0.3);
-    updatePreviewTransform();
-  });
-}
-
-if (e.imagePreviewZoomOutBtn) {
-  e.imagePreviewZoomOutBtn.addEventListener("click", () => {
-    previewScale = Math.max(0.5, previewScale - 0.3);
-    if (previewScale <= 1) { previewPanX = 0; previewPanY = 0; }
-    updatePreviewTransform();
-  });
-}
-
-if (e.imagePreviewZoomResetBtn) {
-  e.imagePreviewZoomResetBtn.addEventListener("click", resetPreviewTransform);
-}
-
-if (e.imagePreviewRotateBtn) {
-  e.imagePreviewRotateBtn.addEventListener("click", () => {
-    previewRotation = (previewRotation + 90) % 360;
-    updatePreviewTransform();
-  });
-}
-
 if (e.imagePreviewCloseBtn) {
   e.imagePreviewCloseBtn.addEventListener("click", () => {
     if (e.imagePreviewDialog) e.imagePreviewDialog.close();
   });
 }
 
-if (e.imagePreviewOpenBrowserBtn) {
-  e.imagePreviewOpenBrowserBtn.addEventListener("click", async () => {
-    const urlToOpen = await getOrFetchViewUrl();
-    if (!urlToOpen) {
-      toast("Foto lokal ini belum tersimpan ke server. Simpan transaksi terlebih dahulu.", "warning");
-      return;
-    }
-    window.open(urlToOpen, "_blank");
-  });
-}
-
-if (e.imagePreviewCopyLinkBtn) {
-  e.imagePreviewCopyLinkBtn.addEventListener("click", async () => {
-    const urlToCopy = await getOrFetchViewUrl();
-    if (!urlToCopy) {
-      toast("Foto ini belum tersimpan ke server. Simpan transaksi terlebih dahulu.", "warning");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(urlToCopy);
-      toast("Link pratinjau web (token expired) berhasil disalin", "success");
-    } catch (_) {
-      toast("Gagal menyalin link web", "error");
-    }
-  });
-}
-
-if (e.imagePreviewDownloadBtn) {
-  e.imagePreviewDownloadBtn.addEventListener("click", async () => {
-    if (!currentPreviewUrl) return;
-    try {
-      const a = document.createElement("a");
-      a.href = currentPreviewUrl;
-      a.download = `bukti-qriskas-${Date.now()}.jpg`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      toast("Foto bukti berhasil diunduh", "success");
-    } catch (_) {
-      toast("Gagal mengunduh foto", "error");
+if (e.imagePreviewDialog) {
+  e.imagePreviewDialog.addEventListener("click", (ev) => {
+    if (ev.target === e.imagePreviewDialog) {
+      e.imagePreviewDialog.close();
     }
   });
 }
 
 if (e.imagePreviewFrame) {
+  let touchStartDist = 0;
+  let initialTouchScale = 1;
+  let lastTapTime = 0;
+
+  // Wheel zoom (Desktop/mouse)
   e.imagePreviewFrame.addEventListener("wheel", (ev) => {
     ev.preventDefault();
-    if (ev.deltaY < 0) previewScale = Math.min(4, previewScale + 0.15);
-    else previewScale = Math.max(0.5, previewScale - 0.15);
+    if (ev.deltaY < 0) previewScale = Math.min(4, previewScale + 0.2);
+    else previewScale = Math.max(1, previewScale - 0.2);
     if (previewScale <= 1) { previewPanX = 0; previewPanY = 0; }
     updatePreviewTransform();
   }, { passive: false });
 
-  e.imagePreviewFrame.addEventListener("dblclick", () => {
-    if (previewScale > 1.1) {
-      resetPreviewTransform();
-    } else {
-      previewScale = 2;
-      updatePreviewTransform();
-    }
-  });
-
+  // Mouse Drag (Desktop)
   e.imagePreviewFrame.addEventListener("mousedown", (ev) => {
     if (previewScale <= 1) return;
     isPreviewDragging = true;
@@ -3144,33 +3094,72 @@ if (e.imagePreviewFrame) {
     }
   });
 
-  let touchStartDist = 0, initialTouchScale = 1;
+  // Touch: Pinch-to-zoom (Cubit Layar) & Pan (Geser)
   e.imagePreviewFrame.addEventListener("touchstart", (ev) => {
     if (ev.touches.length === 2) {
-      touchStartDist = Math.hypot(ev.touches[0].clientX - ev.touches[1].clientX, ev.touches[0].clientY - ev.touches[1].clientY);
+      ev.preventDefault();
+      touchStartDist = Math.hypot(
+        ev.touches[0].clientX - ev.touches[1].clientX,
+        ev.touches[0].clientY - ev.touches[1].clientY
+      );
       initialTouchScale = previewScale;
+      isPreviewDragging = false;
     } else if (ev.touches.length === 1 && previewScale > 1) {
       isPreviewDragging = true;
       previewStartX = ev.touches[0].clientX - previewPanX;
       previewStartY = ev.touches[0].clientY - previewPanY;
     }
-  }, { passive: true });
+  }, { passive: false });
 
   e.imagePreviewFrame.addEventListener("touchmove", (ev) => {
     if (ev.touches.length === 2 && touchStartDist > 0) {
-      const dist = Math.hypot(ev.touches[0].clientX - ev.touches[1].clientX, ev.touches[0].clientY - ev.touches[1].clientY);
-      previewScale = Math.min(4, Math.max(0.5, initialTouchScale * (dist / touchStartDist)));
+      ev.preventDefault();
+      const dist = Math.hypot(
+        ev.touches[0].clientX - ev.touches[1].clientX,
+        ev.touches[0].clientY - ev.touches[1].clientY
+      );
+      previewScale = Math.min(4, Math.max(1, initialTouchScale * (dist / touchStartDist)));
+      if (previewScale <= 1) {
+        previewPanX = 0;
+        previewPanY = 0;
+      }
       updatePreviewTransform();
     } else if (ev.touches.length === 1 && isPreviewDragging) {
+      ev.preventDefault();
       previewPanX = ev.touches[0].clientX - previewStartX;
       previewPanY = ev.touches[0].clientY - previewStartY;
       updatePreviewTransform();
     }
-  }, { passive: true });
+  }, { passive: false });
 
-  e.imagePreviewFrame.addEventListener("touchend", () => {
+  e.imagePreviewFrame.addEventListener("touchend", (ev) => {
     isPreviewDragging = false;
     touchStartDist = 0;
+    if (previewScale <= 1.05) {
+      resetPreviewTransform();
+    }
+
+    // Ketuk 2x (double-tap) untuk zoom cepat (toggle 1x dan 2.5x)
+    const now = Date.now();
+    if (now - lastTapTime < 280 && ev.touches.length === 0) {
+      if (previewScale > 1.1) {
+        resetPreviewTransform();
+      } else {
+        previewScale = 2.5;
+        updatePreviewTransform();
+      }
+    }
+    lastTapTime = now;
+  });
+
+  // Double click for mouse
+  e.imagePreviewFrame.addEventListener("dblclick", () => {
+    if (previewScale > 1.1) {
+      resetPreviewTransform();
+    } else {
+      previewScale = 2.5;
+      updatePreviewTransform();
+    }
   });
 }
 
@@ -3184,12 +3173,8 @@ window.addEventListener("keydown", (ev) => {
       updatePreviewTransform();
     } else if (ev.key === "-") {
       ev.preventDefault();
-      previewScale = Math.max(0.5, previewScale - 0.3);
+      previewScale = Math.max(1, previewScale - 0.3);
       if (previewScale <= 1) { previewPanX = 0; previewPanY = 0; }
-      updatePreviewTransform();
-    } else if (ev.key === "r" || ev.key === "R") {
-      ev.preventDefault();
-      previewRotation = (previewRotation + 90) % 360;
       updatePreviewTransform();
     } else if (ev.key === "0") {
       ev.preventDefault();
@@ -3198,20 +3183,8 @@ window.addEventListener("keydown", (ev) => {
   }
 });
 
-if (e.imagePreviewDialog) {
-  e.imagePreviewDialog.addEventListener("click", (ev) => {
-    const rect = e.imagePreviewDialog.getBoundingClientRect();
-    const isInDialog = (
-      rect.top <= ev.clientY &&
-      ev.clientY <= rect.top + rect.height &&
-      rect.left <= ev.clientX &&
-      ev.clientX <= rect.left + rect.width
-    );
-    if (!isInDialog) {
-      e.imagePreviewDialog.close();
-    }
-  });
-}
+
+
 
 // Unified click preview for all image thumbnails across the app
 if (e.preview) {

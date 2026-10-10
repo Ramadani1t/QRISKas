@@ -1585,7 +1585,7 @@ input:checked + .slider:before {
 .image-preview-frame {
   width: 100%;
   min-height: 320px;
-  max-height: 66vh;
+  max-height: 74vh;
   flex: 1;
   background: radial-gradient(circle at center, #151106 0%, #040301 100%);
   border: 1px solid #28210b;
@@ -1608,11 +1608,12 @@ input:checked + .slider:before {
 
 #imagePreviewModalImg {
   max-width: 100%;
-  max-height: 66vh;
+  max-height: 74vh;
   object-fit: contain;
   border-radius: 8px;
   display: block;
-  transition: transform .12s ease-out;
+  transition: transform .08s ease-out;
+  will-change: transform;
   transform-origin: center center;
 }
 
