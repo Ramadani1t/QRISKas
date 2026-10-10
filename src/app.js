@@ -897,7 +897,7 @@ async function loadPendingList(){
       item.className="pending-item";
       item.innerHTML=`<img class="pending-item-thumb" src="${r.imageUrl}" alt="Foto Pending" loading="lazy"><div class="pending-item-body"><div class="pending-item-meta"><time class="pending-item-time">${time} WIB</time><span class="badge-pending">PENDING</span></div><div class="pending-item-actions"><button class="confirm-pending-btn" type="button">Isi Nominal</button></div></div>`;
       item.querySelector(".pending-item-thumb").onclick=()=>{
-        openImagePreview(r.viewUrl || r.imageUrl, {
+        openImagePreview(r.imageUrl, {
           title: "Foto Bukti Pending",
           time,
           date: localDate(),
@@ -936,7 +936,7 @@ function openPendingConfirm(record){
     e.pendingConfirmImg.src=record.imageUrl;
     e.pendingConfirmImg.title="Klik untuk memperbesar pratinjau foto";
     e.pendingConfirmImg.onclick=()=>{
-      openImagePreview(record.viewUrl || record.imageUrl, {
+      openImagePreview(record.imageUrl, {
         title: "Foto Bukti Pending",
         amount: Number((e.pendingConfirmAmount?.value || "").replace(/\D/g, "")) || 0,
         badgeLabel: "PENDING",
@@ -2192,18 +2192,14 @@ async function loadHistory(init=false){
       if (thumbEl) {
         thumbEl.onclick = (ev) => {
           ev.preventDefault();
-          openImagePreview(r.viewUrl || r.imageUrl, previewMeta);
+          openImagePreview(r.imageUrl, previewMeta);
         };
       }
       const linkEl = item.querySelector(".history-item-link");
       if (linkEl) {
         linkEl.onclick = (ev) => {
           ev.preventDefault();
-          if (loadSettings().imagePreviewMode === "browser") {
-            window.open(r.viewUrl || r.imageUrl, "_blank");
-          } else {
-            openImagePreview(r.viewUrl || r.imageUrl, previewMeta);
-          }
+          openImagePreview(r.imageUrl, previewMeta);
         };
       }
 
@@ -2992,24 +2988,20 @@ async function getOrFetchViewUrl() {
 
 function openImagePreview(url, meta = {}) {
   if (!url) return;
-  const isMobile = isMobileApp();
-  const s = loadSettings();
-
-  // Eksklusif untuk mobile Android DAN harus dinyalakan di pengaturan.
-  // Jika di browser web atau di mobile tapi setting belum diaktifkan:
-  // langsung buka Web Viewer di tab baru dengan token expired.
-  if (!isMobile || s.imagePreviewMode !== "in_app") {
-    const targetUrl = meta.viewUrl || url;
-    window.open(targetUrl, "_blank");
-    return;
+  // Pastikan url yang diputar/ditampilkan adalah image URL langsung (bukan halaman HTML /view)
+  let imgUrl = url;
+  if (imgUrl.includes("/view?") || imgUrl.includes("/v?")) {
+    imgUrl = meta.imageUrl || imgUrl.replace(/\/view(\?.*)?$/, "");
   }
-  currentPreviewUrl = url;
+  if (!imgUrl) return;
+
+  currentPreviewUrl = imgUrl;
   currentViewUrl = meta.viewUrl || "";
   currentImageKey = meta.imageKey || "";
   resetPreviewTransform();
 
   if (e.imagePreviewModalImg) {
-    e.imagePreviewModalImg.src = url;
+    e.imagePreviewModalImg.src = imgUrl;
   }
   if (e.imagePreviewTitle) {
     e.imagePreviewTitle.textContent = meta.title || "Foto Bukti Transaksi";
@@ -3023,17 +3015,13 @@ function openImagePreview(url, meta = {}) {
   if (e.imagePreviewMeta) {
     let chips = "";
     if (meta.amount) {
-      const isExp = meta.isExpense;
-      chips += `<span class="badge-preview-amount">${isExp ? "-" : ""}Rp${rupiah(meta.amount)}</span>`;
+      chips += `<span class="badge-preview-amount">${rupiah(meta.amount)}</span>`;
     }
     if (meta.badgeLabel) {
-      chips += `<span class="badge-preview-type ${meta.badgeClass || ''}">${escapeHtml(meta.badgeLabel)}</span>`;
+      chips += `<span class="badge ${meta.badgeClass || ''}">${meta.badgeLabel}</span>`;
     }
     if (meta.note) {
-      chips += `<span class="badge-preview-note">${escapeHtml(meta.note)}</span>`;
-    }
-    if (currentViewUrl) {
-      chips += `<span class="badge-preview-exp"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Tautan Web Aman (48 Jam)</span>`;
+      chips += `<span class="badge-preview-note"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>${escapeHtml(meta.note)}</span>`;
     }
     e.imagePreviewMeta.innerHTML = chips;
     e.imagePreviewMeta.style.display = chips ? "flex" : "none";
@@ -3543,3 +3531,40 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+
+let guestTimerInterval = null;
+function startGuestTimer(initialSeconds) {
+  const banner = document.getElementById("guestModeBanner");
+  const countdownEl = document.getElementById("guestCountdown");
+  if (!banner || !countdownEl) return;
+  banner.classList.remove("hidden");
+
+  let remaining = Math.max(1, Math.round(Number(initialSeconds) || 900));
+  function updateDisplay() {
+    const m = Math.floor(remaining / 60);
+    const s = remaining % 60;
+    countdownEl.textContent = `Sisa: ${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+  updateDisplay();
+
+  if (guestTimerInterval) clearInterval(guestTimerInterval);
+  guestTimerInterval = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(guestTimerInterval);
+      countdownEl.textContent = "Sisa: 00:00";
+      toast("Sesi Mode Intip telah berakhir (waktu habis)", "warning");
+      setTimeout(() => {
+        location.href = "/login";
+      }, 1500);
+    } else {
+      updateDisplay();
+    }
+  }, 1000);
+}
+
+function stopGuestTimer() {
+  if (guestTimerInterval) clearInterval(guestTimerInterval);
+  const banner = document.getElementById("guestModeBanner");
+  if (banner) banner.classList.add("hidden");
+}
