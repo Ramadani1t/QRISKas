@@ -54,8 +54,14 @@ async function getOrGenerateIntipUrl(keyOrUrl) {
   if (!key.startsWith("images/")) return keyOrUrl;
 
   try {
-    toast("Membuat sesi...", "loading");
+    toast("Membuat sesi intip 1 hari...", "loading");
+    const startTime = Date.now();
     const res = await fetch(`/api/intip-session?key=${encodeURIComponent(key)}`);
+    const elapsed = Date.now() - startTime;
+    // Beri jeda wajar (minimal ~650ms) agar pembuatan token/sesi terasa mantap
+    if (elapsed < 650) {
+      await new Promise(r => setTimeout(r, 650 - elapsed));
+    }
     if (res.ok) {
       const data = await res.json();
       if (data.intipUrl) return data.intipUrl;
@@ -2230,16 +2236,25 @@ async function loadHistory(init=false){
         };
       }
 
-      item.querySelector(".copy-record").onclick = async () => {
-        let textLine = line;
-        if (r.imageKey) {
-          const intipUrl = await getOrGenerateIntipUrl(r.imageKey);
-          textLine += ` gambar ${intipUrl || r.imageUrl}`;
-        } else {
-          textLine += ` gambar ${r.imageUrl}`;
+      item.querySelector(".copy-record").onclick = async (ev) => {
+        const btn = ev.currentTarget;
+        const oldText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "⏳...";
+        try {
+          let textLine = line;
+          if (r.imageKey) {
+            const intipUrl = await getOrGenerateIntipUrl(r.imageKey);
+            textLine += ` gambar ${intipUrl || r.imageUrl}`;
+          } else {
+            textLine += ` gambar ${r.imageUrl}`;
+          }
+          await navigator.clipboard.writeText(textLine);
+          toast("Rincian transaksi & link intip 1 hari disalin", "success");
+        } finally {
+          btn.disabled = false;
+          btn.textContent = oldText;
         }
-        await navigator.clipboard.writeText(textLine);
-        toast("Rincian transaksi berhasil disalin (link intip 1 hari)", "success");
       };
       if(data.role==="admin"){
         item.querySelector(".edit-record").onclick=()=>openEditRecord(r);
@@ -2349,7 +2364,17 @@ async function loadHistory(init=false){
   finally{e.historyLoading.classList.add("hidden");}
 }
 
-async function shareText(t){if(navigator.share)await navigator.share({text:t});else window.open(`https://wa.me/?text=${encodeURIComponent(t)}`,"_blank");}
+async function shareText(t) {
+  if (navigator.share) {
+    try {
+      await navigator.share({ text: t });
+      return;
+    } catch (err) {
+      if (err.name === "AbortError") return;
+    }
+  }
+  window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, "_blank");
+}
 
 // Event listeners
 if(e.toggleCamMode)e.toggleCamMode.onclick=toggleCamera;
@@ -2807,36 +2832,55 @@ if(e.toggleConfirmExpenseBtn){
 }
 
 e.share.onclick = async () => {
-  let text = e.shareText.textContent;
-  if (lastSavedImageKey) {
-    const intipUrl = await getOrGenerateIntipUrl(lastSavedImageKey);
-    if (intipUrl) {
-      if (text.includes(" gambar ")) {
-        text = text.replace(/ gambar \S+/, ` gambar ${intipUrl}`);
-      } else {
-        text += ` gambar ${intipUrl}`;
+  const originalText = e.share.textContent;
+  e.share.disabled = true;
+  e.share.textContent = "⏳ Membuat Sesi...";
+
+  try {
+    let text = e.shareText.textContent;
+    if (lastSavedImageKey) {
+      const intipUrl = await getOrGenerateIntipUrl(lastSavedImageKey);
+      if (intipUrl) {
+        if (text.includes(" gambar ")) {
+          text = text.replace(/ gambar \S+/, ` gambar ${intipUrl}`);
+        } else {
+          text += ` gambar ${intipUrl}`;
+        }
+        e.shareText.textContent = text;
       }
-      e.shareText.textContent = text;
     }
+    toast("Sesi intip 1 hari siap dibagikan!", "success");
+    await shareText(text);
+  } finally {
+    e.share.disabled = false;
+    e.share.textContent = originalText;
   }
-  await shareText(text);
 };
 
 e.copy.onclick = async () => {
-  let text = e.shareText.textContent;
-  if (lastSavedImageKey) {
-    const intipUrl = await getOrGenerateIntipUrl(lastSavedImageKey);
-    if (intipUrl) {
-      if (text.includes(" gambar ")) {
-        text = text.replace(/ gambar \S+/, ` gambar ${intipUrl}`);
-      } else {
-        text += ` gambar ${intipUrl}`;
+  const originalText = e.copy.textContent;
+  e.copy.disabled = true;
+  e.copy.textContent = "⏳ Membuat Sesi...";
+
+  try {
+    let text = e.shareText.textContent;
+    if (lastSavedImageKey) {
+      const intipUrl = await getOrGenerateIntipUrl(lastSavedImageKey);
+      if (intipUrl) {
+        if (text.includes(" gambar ")) {
+          text = text.replace(/ gambar \S+/, ` gambar ${intipUrl}`);
+        } else {
+          text += ` gambar ${intipUrl}`;
+        }
+        e.shareText.textContent = text;
       }
-      e.shareText.textContent = text;
     }
+    await navigator.clipboard.writeText(text);
+    toast("Teks struk & link intip 1 hari berhasil disalin", "success");
+  } finally {
+    e.copy.disabled = false;
+    e.copy.textContent = originalText;
   }
-  await navigator.clipboard.writeText(text);
-  toast("Teks struk berhasil disalin (link intip 1 hari)", "success");
 };
 e.shareRecap.onclick=()=>shareText(recapText);
 e.copyRecap.onclick=async()=>{await navigator.clipboard.writeText(recapText);toast("Rekap harian berhasil disalin","success");};
