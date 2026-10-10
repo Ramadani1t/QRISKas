@@ -41,7 +41,30 @@ const ids=[
   "webInstallBanner","webInstallVersionBadge","webInstallPwaBtn","webInstallApkBtn","dismissInstallBannerBtn","webInstallApkBtnText"
 ];
 const e=Object.fromEntries(ids.map(id=>[id,$(id)]));
-let stream,imageBlob,amount=0,recapText="",originalTime="",originalDate="",pendingDeleteRecord=null,pendingEditRecord=null;
+let stream,imageBlob,amount=0;
+
+let lastSavedImageKey = "";
+async function getOrGenerateIntipUrl(keyOrUrl) {
+  if (!keyOrUrl) return "";
+  let key = keyOrUrl;
+  if (key.includes("/images/")) {
+    const m = key.match(/images\/\d{4}\/\d{2}\/\d{2}\/[^?#\s]+/);
+    if (m) key = m[0];
+  }
+  if (!key.startsWith("images/")) return keyOrUrl;
+
+  try {
+    toast("Membuat sesi...", "loading");
+    const res = await fetch(`/api/intip-session?key=${encodeURIComponent(key)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.intipUrl) return data.intipUrl;
+    }
+  } catch (_) {}
+  return keyOrUrl;
+}
+
+let recapText="",originalTime="",originalDate="",pendingDeleteRecord=null,pendingEditRecord=null;
 let inputSource="camera";
 let currentFacingMode=localStorage.getItem("preferredFacingMode")||"environment";
 let allVideoDevices=[];
@@ -1356,7 +1379,8 @@ async function saveSurplus(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,true,false,false,data.note);
-    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
+    lastSavedImageKey = data.imageKey || "";
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     if(e.surplusDialog)e.surplusDialog.close();
 
     e.result.classList.add("hidden");
@@ -1471,7 +1495,8 @@ async function saveCashout(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,true,data.isRevised,data.note);
-    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
+    lastSavedImageKey = data.imageKey || "";
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     if(e.cashoutDialog)e.cashoutDialog.close();
 
     e.result.classList.add("hidden");
@@ -1671,7 +1696,8 @@ async function saveRevised(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,false,true,data.note);
-    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
+    lastSavedImageKey = data.imageKey || "";
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     if(e.revisedDialog)e.revisedDialog.close();
 
     e.result.classList.add("hidden");
@@ -1874,7 +1900,8 @@ async function saveExpense(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,false,false,data.note,true);
-    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
+    lastSavedImageKey = data.imageKey || "";
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     if(e.expenseDialog)e.expenseDialog.close();
 
     e.result.classList.add("hidden");
@@ -2203,9 +2230,16 @@ async function loadHistory(init=false){
         };
       }
 
-      item.querySelector(".copy-record").onclick=async()=>{
-        await navigator.clipboard.writeText(`${line} gambar ${recordWebLink}`);
-        toast("Rincian transaksi & link web berhasil disalin", "success");
+      item.querySelector(".copy-record").onclick = async () => {
+        let textLine = line;
+        if (r.imageKey) {
+          const intipUrl = await getOrGenerateIntipUrl(r.imageKey);
+          textLine += ` gambar ${intipUrl || r.imageUrl}`;
+        } else {
+          textLine += ` gambar ${r.imageUrl}`;
+        }
+        await navigator.clipboard.writeText(textLine);
+        toast("Rincian transaksi berhasil disalin (link intip 1 hari)", "success");
       };
       if(data.role==="admin"){
         item.querySelector(".edit-record").onclick=()=>openEditRecord(r);
@@ -2772,8 +2806,38 @@ if(e.toggleConfirmExpenseBtn){
   };
 }
 
-e.share.onclick=()=>shareText(e.shareText.textContent);
-e.copy.onclick=async()=>{await navigator.clipboard.writeText(e.shareText.textContent);toast("Teks struk berhasil disalin","success");};
+e.share.onclick = async () => {
+  let text = e.shareText.textContent;
+  if (lastSavedImageKey) {
+    const intipUrl = await getOrGenerateIntipUrl(lastSavedImageKey);
+    if (intipUrl) {
+      if (text.includes(" gambar ")) {
+        text = text.replace(/ gambar \S+/, ` gambar ${intipUrl}`);
+      } else {
+        text += ` gambar ${intipUrl}`;
+      }
+      e.shareText.textContent = text;
+    }
+  }
+  await shareText(text);
+};
+
+e.copy.onclick = async () => {
+  let text = e.shareText.textContent;
+  if (lastSavedImageKey) {
+    const intipUrl = await getOrGenerateIntipUrl(lastSavedImageKey);
+    if (intipUrl) {
+      if (text.includes(" gambar ")) {
+        text = text.replace(/ gambar \S+/, ` gambar ${intipUrl}`);
+      } else {
+        text += ` gambar ${intipUrl}`;
+      }
+      e.shareText.textContent = text;
+    }
+  }
+  await navigator.clipboard.writeText(text);
+  toast("Teks struk berhasil disalin (link intip 1 hari)", "success");
+};
 e.shareRecap.onclick=()=>shareText(recapText);
 e.copyRecap.onclick=async()=>{await navigator.clipboard.writeText(recapText);toast("Rekap harian berhasil disalin","success");};
 if(e.editAmount){

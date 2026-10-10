@@ -379,6 +379,54 @@ export default {
       return env.ASSETS.fetch(request);
     }
 
+    // === ROUTE LINK INTIP SESI 1 HARI (RAW IMAGE) ===
+    if (url.pathname === "/intip" || url.pathname.startsWith("/intip/")) {
+      let key = url.searchParams.get("key") || "";
+      let exp = url.searchParams.get("exp") || "";
+      let sig = url.searchParams.get("sig") || "";
+
+      if (!key && url.pathname.startsWith("/intip/")) {
+        key = decodeURIComponent(url.pathname.replace(/^\/intip\//, ""));
+      }
+
+      if (!key || !exp || !sig || !key.startsWith("images/")) {
+        return new Response("Tautan sesi intip tidak valid.", {
+          status: 400,
+          headers: { "content-type": "text/plain; charset=utf-8" }
+        });
+      }
+
+      const isValid = await verifyViewToken(key, exp, sig, env.AUTH_SECRET);
+      if (!isValid) {
+        const isExpired = Number(exp) && Number(exp) < Date.now() / 1000;
+        const msg = isExpired
+          ? "Sesi intip foto bukti ini telah kedaluwarsa (berlaku 1 hari / 24 jam). Silakan minta kasir membagikan ulang."
+          : "Tautan sesi intip tidak sah atau tanda tangan token salah.";
+        return new Response(msg, {
+          status: 401,
+          headers: { "content-type": "text/plain; charset=utf-8" }
+        });
+      }
+
+      const obj = await env.RECEIPTS.get(key);
+      if (!obj) {
+        return new Response("Foto bukti tidak ditemukan.", {
+          status: 404,
+          headers: { "content-type": "text/plain; charset=utf-8" }
+        });
+      }
+
+      // Sajikan file gambar RAW langsung (JPEG)
+      return new Response(obj.body, {
+        status: 200,
+        headers: {
+          "content-type": obj.httpMetadata?.contentType || "image/jpeg",
+          "cache-control": "public, max-age=86400",
+          "x-content-type-options": "nosniff"
+        }
+      });
+    }
+
     // === PUBLIC VIEW WITH EXPIRING TOKEN (Tanpa Perlu Login) ===
     if (url.pathname === "/view" || url.pathname === "/v" || url.pathname === "/view/raw" || url.pathname === "/v/raw") {
       let key = url.searchParams.get("key") || "";
@@ -441,6 +489,22 @@ export default {
     }
     const role = typeof auth === "object" ? auth.role : auth;
     const sessionExpires = typeof auth === "object" ? auth.expires : 0;
+
+    if (url.pathname === "/api/intip-session" && request.method === "GET") {
+      const key = url.searchParams.get("key");
+      if (!key || typeof key !== "string" || !key.startsWith("images/")) {
+        return json({ error: "Key foto tidak valid." }, 400);
+      }
+      // Sesi intip 1 hari (86400 detik = 24 jam)
+      const token = await generateViewToken(key, 86400, env.AUTH_SECRET);
+      const intipUrl = `${url.origin}/intip?key=${encodeURIComponent(key)}&exp=${token.exp}&sig=${token.sig}`;
+      return json({
+        key,
+        exp: token.exp,
+        expiresIn: 86400,
+        intipUrl
+      });
+    }
 
     if (url.pathname === "/api/share-token" && request.method === "GET") {
       const key = url.searchParams.get("key");
