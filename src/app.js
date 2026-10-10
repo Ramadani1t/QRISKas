@@ -36,7 +36,8 @@ const ids=[
   "mobileUpdateVerifyBox","mobileUpdateTargetTag","mobileUpdateSizeInfo","mobileUpdateChangelog","executeMobileUpdateBtn","openMobileUpdateBtn","dismissMobileUpdateBtn",
   "modeSectionLabel",
   "imagePreviewDialog","imagePreviewModalImg","imagePreviewTitle","imagePreviewSubtitle","imagePreviewMeta","imagePreviewCloseBtn","imagePreviewOpenBrowserBtn","imagePreviewCopyLinkBtn",
-  "settingImagePreviewMode","settingInstallBannerEnabled",
+  "imagePreviewFrame","imagePreviewZoomBadge","imagePreviewZoomInBtn","imagePreviewZoomOutBtn","imagePreviewZoomResetBtn","imagePreviewRotateBtn","imagePreviewDownloadBtn",
+  "settingImagePreviewInApp","settingImagePreviewGroup","settingImagePreviewHelpText","webPreviewNotice","settingInstallBannerEnabled",
   "webInstallBanner","webInstallVersionBadge","webInstallPwaBtn","webInstallApkBtn","dismissInstallBannerBtn","webInstallApkBtnText"
 ];
 const e=Object.fromEntries(ids.map(id=>[id,$(id)]));
@@ -148,6 +149,7 @@ const currentJakartaTime=()=>{const p=new Intl.DateTimeFormat("en-GB",{timeZone:
 
 // Cek apakah context aman (HTTPS atau localhost)
 const isSecureContext=()=>location.protocol==="https:"||location.hostname==="localhost"||location.hostname==="127.0.0.1"||location.hostname.endsWith(".local");
+const isMobileApp=()=>Boolean(window.__isAndroidApp || window.QriskasAndroid || window.AndroidBridge);
 
 function loadSettings(){
   const facing=localStorage.getItem("preferredFacingMode")||"environment";
@@ -162,7 +164,7 @@ function loadSettings(){
   const revisionEnabled=localStorage.getItem("revisionEnabled")!=="false";
   const expenseEnabled=localStorage.getItem("expenseEnabled")!=="false";
   const delaySaveEnabled=localStorage.getItem("delaySaveEnabled")==="true";
-  const imagePreviewMode=localStorage.getItem("imagePreviewMode")||"in_app";
+  const imagePreviewMode=localStorage.getItem("imagePreviewMode")||"browser";
   const installBannerEnabled=localStorage.getItem("installBannerEnabled")!=="false";
   const recapCompact=localStorage.getItem("recapCompact")==="true";
   return {facing,nativeCamMode,customPackage,shortcutEnabled,shortcutLabel,shortcutUrl,groupedEnabled,surplusEnabled,cashoutEnabled,revisionEnabled,expenseEnabled,delaySaveEnabled,imagePreviewMode,installBannerEnabled,recapCompact};
@@ -286,11 +288,27 @@ async function openSettingsModal(){
     }
   }catch(_){}
 
-  if(e.settingImagePreviewMode) e.settingImagePreviewMode.value = s.imagePreviewMode || "in_app";
+  const isAndroid = isMobileApp();
+  if (e.settingImagePreviewInApp) {
+    if (!isAndroid) {
+      e.settingImagePreviewInApp.checked = false;
+      e.settingImagePreviewInApp.disabled = true;
+      if (e.webPreviewNotice) e.webPreviewNotice.style.display = "block";
+      if (e.settingImagePreviewHelpText) {
+        e.settingImagePreviewHelpText.textContent = "Fitur modal pratinjau di dalam aplikasi eksklusif untuk aplikasi Android. Di browser web, foto akan selalu dibuka di tab baru melalui Web Viewer aman.";
+      }
+    } else {
+      e.settingImagePreviewInApp.disabled = false;
+      e.settingImagePreviewInApp.checked = s.imagePreviewMode === "in_app";
+      if (e.webPreviewNotice) e.webPreviewNotice.style.display = "none";
+      if (e.settingImagePreviewHelpText) {
+        e.settingImagePreviewHelpText.textContent = "Aktifkan modal pratinjau foto interaktif (zoom, putar, simpan) langsung di dalam aplikasi HP. Jika dinonaktifkan, foto dibuka di tab baru.";
+      }
+    }
+  }
   if(e.settingInstallBannerEnabled) e.settingInstallBannerEnabled.checked = s.installBannerEnabled !== false;
 
   // Verifikasi Pembaruan untuk Web dan Android
-  const isAndroid = Boolean(window.__isAndroidApp || window.QriskasAndroid || window.AndroidBridge);
   if(e.mobileAppUpdateSection){
     e.mobileAppUpdateSection.style.display = "block";
     if(isAndroid){
@@ -328,7 +346,8 @@ async function saveSettings(ev){
   const expenseEnabled=e.settingExpenseEnabled?e.settingExpenseEnabled.checked:true;
   const groupedEnabled=e.settingGroupedEnabled?e.settingGroupedEnabled.checked:true;
   const delaySaveEnabled=e.settingDelaySaveEnabled?e.settingDelaySaveEnabled.checked:false;
-  const imagePreviewMode=e.settingImagePreviewMode?.value||"in_app";
+  const isAndroid = isMobileApp();
+  const imagePreviewMode = (isAndroid && e.settingImagePreviewInApp && e.settingImagePreviewInApp.checked) ? "in_app" : "browser";
   const installBannerEnabled=e.settingInstallBannerEnabled?e.settingInstallBannerEnabled.checked:true;
   const retentionDays=Number(e.settingRetentionDays?.value||30);
 
@@ -877,10 +896,18 @@ async function loadPendingList(){
       const item=document.createElement("article");
       item.className="pending-item";
       item.innerHTML=`<img class="pending-item-thumb" src="${r.imageUrl}" alt="Foto Pending" loading="lazy"><div class="pending-item-body"><div class="pending-item-meta"><time class="pending-item-time">${time} WIB</time><span class="badge-pending">PENDING</span></div><div class="pending-item-actions"><button class="confirm-pending-btn" type="button">Isi Nominal</button></div></div>`;
-      item.querySelector(".confirm-pending-btn").onclick=()=>openPendingConfirm(r);
-      // Klik foto utk preview besar
       item.querySelector(".pending-item-thumb").onclick=()=>{
-        window.open(r.imageUrl,"_blank");
+        openImagePreview(r.viewUrl || r.imageUrl, {
+          title: "Foto Bukti Pending",
+          time,
+          date: localDate(),
+          badgeLabel: "PENDING",
+          badgeClass: "badge-pending",
+          note: r.note || "Menunggu pengisian nominal",
+          viewUrl: r.viewUrl,
+          rawViewUrl: r.rawViewUrl,
+          imageKey: r.imageKey
+        });
       };
       e.pendingList.append(item);
     }
@@ -893,7 +920,22 @@ async function loadPendingList(){
 
 function openPendingConfirm(record){
   pendingConfirmRecord=record;
-  if(e.pendingConfirmImg) e.pendingConfirmImg.src=record.imageUrl;
+  if(e.pendingConfirmImg) {
+    e.pendingConfirmImg.src=record.imageUrl;
+    e.pendingConfirmImg.title="Klik untuk memperbesar pratinjau foto";
+    e.pendingConfirmImg.onclick=()=>{
+      openImagePreview(record.viewUrl || record.imageUrl, {
+        title: "Foto Bukti Pending",
+        amount: Number((e.pendingConfirmAmount?.value || "").replace(/\D/g, "")) || 0,
+        badgeLabel: "PENDING",
+        badgeClass: "badge-pending",
+        note: e.pendingConfirmNote?.value || "",
+        viewUrl: record.viewUrl,
+        rawViewUrl: record.rawViewUrl,
+        imageKey: record.imageKey
+      });
+    };
+  }
   if(e.pendingConfirmAmount) e.pendingConfirmAmount.value="";
   if(e.pendingConfirmNote) e.pendingConfirmNote.value="";
   if(e.pendingConfirmIsSurplus) e.pendingConfirmIsSurplus.checked=false;
@@ -997,7 +1039,7 @@ async function save(){
 
     const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(data.savedAt));
     const line=formatReceiptLine(time,data.amount,data.isSurplus,data.isCashout,data.isRevised,data.note,data.isExpense);
-    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
@@ -1301,7 +1343,7 @@ async function saveSurplus(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,true,false,false,data.note);
-    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
     if(e.surplusDialog)e.surplusDialog.close();
 
     e.result.classList.add("hidden");
@@ -1416,7 +1458,7 @@ async function saveCashout(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,true,data.isRevised,data.note);
-    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
     if(e.cashoutDialog)e.cashoutDialog.close();
 
     e.result.classList.add("hidden");
@@ -1616,7 +1658,7 @@ async function saveRevised(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,false,true,data.note);
-    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
     if(e.revisedDialog)e.revisedDialog.close();
 
     e.result.classList.add("hidden");
@@ -1819,7 +1861,7 @@ async function saveExpense(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,false,false,data.note,true);
-    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
     if(e.expenseDialog)e.expenseDialog.close();
 
     e.result.classList.add("hidden");
@@ -2085,12 +2127,14 @@ async function loadHistory(init=false){
       const line=formatReceiptLine(time,r.amount,isSurplus,isCashout,isRevised,r.note,isExpense);
       const recapLine=loadSettings().recapCompact?formatReceiptLineCompact(time,r.amount,isSurplus,isCashout,isRevised,r.note,isExpense):line;
 
+      const recordWebLink = r.viewUrl || r.imageUrl;
+
       if(isExpense){
         expenseLines.push(`• ${recapLine}`);
-        expenseLinks.push(`• Nota Cash: ${r.imageUrl}`);
+        expenseLinks.push(`• Nota Cash: ${recordWebLink}`);
       }else{
         lines.push(`${lines.length+1}. ${recapLine}`);
-        links.push(`${links.length+1}. ${r.imageUrl}`);
+        links.push(`${links.length+1}. ${recordWebLink}`);
 
         if(!isSurplus && !isCashout){
           if(!groupMap.has(r.amount)){
@@ -2115,7 +2159,7 @@ async function loadHistory(init=false){
       const noteHtml=r.note?`<div class="history-item-note" title="${safeNote}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><span>${safeNote}</span></div>`:"";
       const adminActionsHtml=data.role==="admin"?`<button class="edit-record" type="button" aria-label="Edit transaksi">Edit</button><button class="delete-record" type="button" aria-label="Hapus transaksi">Hapus</button>`:"";
 
-      item.innerHTML=`<img class="history-item-thumb" src="${r.imageUrl}" alt="Bukti ${isExpense?"Struk Belanja Cash":isSurplus?"Surplus":isCashout?"Tukar Cash":"QRIS"}" loading="lazy"><div class="history-item-body"><div class="history-item-header"><div class="history-item-meta"><time class="history-item-time">${time} WIB</time>${expenseBadgeHtml}${surplusBadgeHtml}${cashoutBadgeHtml}${revisedBadgeHtml}</div><div class="history-item-actions"><button class="copy-record" type="button" title="Salin transaksi ini">Salin</button>${adminActionsHtml}</div></div><strong class="history-item-amount">${isExpense?"-":""}Rp${rupiah(r.amount)}</strong>${noteHtml}<a class="history-item-link" href="${r.imageUrl}" target="_blank" rel="noopener"><span>Lihat foto bukti</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></div>`;
+      item.innerHTML=`<img class="history-item-thumb" src="${r.imageUrl}" alt="Bukti ${isExpense?"Struk Belanja Cash":isSurplus?"Surplus":isCashout?"Tukar Cash":"QRIS"}" loading="lazy"><div class="history-item-body"><div class="history-item-header"><div class="history-item-meta"><time class="history-item-time">${time} WIB</time>${expenseBadgeHtml}${surplusBadgeHtml}${cashoutBadgeHtml}${revisedBadgeHtml}</div><div class="history-item-actions"><button class="copy-record" type="button" title="Salin transaksi ini">Salin</button>${adminActionsHtml}</div></div><strong class="history-item-amount">${isExpense?"-":""}Rp${rupiah(r.amount)}</strong>${noteHtml}<a class="history-item-link" href="${recordWebLink}" target="_blank" rel="noopener"><span>Lihat foto bukti</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></div>`;
 
       const previewMeta = {
         title: isExpense ? "Nota Belanja Cash" : isSurplus ? "Bukti Surplus Kas" : isCashout ? "Bukti Tukar Cash" : isRevised ? "Bukti Transaksi Revisi" : "Bukti Pembayaran QRIS",
@@ -2125,29 +2169,34 @@ async function loadHistory(init=false){
         isExpense: isExpense,
         badgeLabel: isExpense ? "STRUK CASH" : isSurplus ? "SURPLUS" : isCashout ? "TUKAR CASH" : isRevised ? "REVISI" : "QRIS",
         badgeClass: isExpense ? "badge-expense" : isSurplus ? "badge-surplus" : isCashout ? "badge-cashout" : isRevised ? "badge-revised" : "",
-        note: r.note
+        note: r.note,
+        viewUrl: r.viewUrl,
+        rawViewUrl: r.rawViewUrl,
+        imageKey: r.imageKey
       };
 
       const thumbEl = item.querySelector(".history-item-thumb");
       if (thumbEl) {
         thumbEl.onclick = (ev) => {
           ev.preventDefault();
-          openImagePreview(r.imageUrl, previewMeta);
+          openImagePreview(r.viewUrl || r.imageUrl, previewMeta);
         };
       }
       const linkEl = item.querySelector(".history-item-link");
       if (linkEl) {
         linkEl.onclick = (ev) => {
-          if (loadSettings().imagePreviewMode === "in_app") {
-            ev.preventDefault();
-            openImagePreview(r.imageUrl, previewMeta);
+          ev.preventDefault();
+          if (loadSettings().imagePreviewMode === "browser") {
+            window.open(r.viewUrl || r.imageUrl, "_blank");
+          } else {
+            openImagePreview(r.viewUrl || r.imageUrl, previewMeta);
           }
         };
       }
 
       item.querySelector(".copy-record").onclick=async()=>{
-        await navigator.clipboard.writeText(`${line} gambar ${r.imageUrl}`);
-        toast("Rincian transaksi berhasil disalin", "success");
+        await navigator.clipboard.writeText(`${line} gambar ${recordWebLink}`);
+        toast("Rincian transaksi & link web berhasil disalin", "success");
       };
       if(data.role==="admin"){
         item.querySelector(".edit-record").onclick=()=>openEditRecord(r);
@@ -2867,17 +2916,83 @@ async function syncOfflineQueue() {
 }
 
 
-// ==================== IN-APP LIGHTWEIGHT IMAGE PREVIEW ====================
+// ==================== IN-APP EXPANSIVE IMAGE PREVIEW ====================
 let currentPreviewUrl = "";
+let currentViewUrl = "";
+let currentImageKey = "";
+let previewScale = 1;
+let previewRotation = 0;
+let previewPanX = 0;
+let previewPanY = 0;
+let isPreviewDragging = false;
+let previewStartX = 0;
+let previewStartY = 0;
+
+function updatePreviewTransform() {
+  if (!e.imagePreviewModalImg) return;
+  e.imagePreviewModalImg.style.transform = `translate(${previewPanX}px, ${previewPanY}px) scale(${previewScale}) rotate(${previewRotation}deg)`;
+  if (e.imagePreviewZoomBadge) {
+    e.imagePreviewZoomBadge.textContent = `${Math.round(previewScale * 100)}%`;
+    e.imagePreviewZoomBadge.classList.toggle("hidden", previewScale === 1 && previewRotation === 0);
+  }
+  if (e.imagePreviewFrame) {
+    e.imagePreviewFrame.style.cursor = previewScale > 1 ? (isPreviewDragging ? "grabbing" : "grab") : "default";
+  }
+}
+
+function resetPreviewTransform() {
+  previewScale = 1;
+  previewRotation = 0;
+  previewPanX = 0;
+  previewPanY = 0;
+  isPreviewDragging = false;
+  updatePreviewTransform();
+}
+
+async function getOrFetchViewUrl() {
+  if (currentViewUrl) return currentViewUrl;
+  if (!currentPreviewUrl) return "";
+  if (currentPreviewUrl.startsWith("blob:") || currentPreviewUrl.startsWith("data:")) {
+    return "";
+  }
+  let key = currentImageKey;
+  if (!key) {
+    const keyMatch = currentPreviewUrl.match(/images\/\d{4}\/\d{2}\/\d{2}\/[^?#]+/);
+    if (keyMatch) key = keyMatch[0];
+  }
+  if (key) {
+    try {
+      const res = await fetch(`/api/share-token?key=${encodeURIComponent(key)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.viewUrl) {
+          currentViewUrl = data.viewUrl;
+          return currentViewUrl;
+        }
+      }
+    } catch (_) {}
+  }
+  return currentPreviewUrl;
+}
 
 function openImagePreview(url, meta = {}) {
   if (!url) return;
+  const isMobile = isMobileApp();
   const s = loadSettings();
-  if (s.imagePreviewMode === "browser") {
-    window.open(url, "_blank");
+
+  // Eksklusif untuk mobile Android DAN harus dinyalakan di pengaturan.
+  // Jika di browser web atau di mobile tapi setting belum diaktifkan:
+  // langsung buka Web Viewer di tab baru dengan token expired.
+  if (!isMobile || s.imagePreviewMode !== "in_app") {
+    const targetUrl = meta.viewUrl || url;
+    window.open(targetUrl, "_blank");
     return;
   }
   currentPreviewUrl = url;
+  currentViewUrl = meta.viewUrl || "";
+  currentImageKey = meta.imageKey || "";
+  resetPreviewTransform();
+
   if (e.imagePreviewModalImg) {
     e.imagePreviewModalImg.src = url;
   }
@@ -2893,14 +3008,17 @@ function openImagePreview(url, meta = {}) {
   if (e.imagePreviewMeta) {
     let chips = "";
     if (meta.amount) {
-      const isExpense = meta.isExpense;
-      chips += `<span class="badge-preview-amount">${isExpense ? "-" : ""}Rp${rupiah(meta.amount)}</span>`;
+      const isExp = meta.isExpense;
+      chips += `<span class="badge-preview-amount">${isExp ? "-" : ""}Rp${rupiah(meta.amount)}</span>`;
     }
     if (meta.badgeLabel) {
       chips += `<span class="badge-preview-type ${meta.badgeClass || ''}">${escapeHtml(meta.badgeLabel)}</span>`;
     }
     if (meta.note) {
       chips += `<span class="badge-preview-note">${escapeHtml(meta.note)}</span>`;
+    }
+    if (currentViewUrl) {
+      chips += `<span class="badge-preview-exp"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Tautan Web Aman (48 Jam)</span>`;
     }
     e.imagePreviewMeta.innerHTML = chips;
     e.imagePreviewMeta.style.display = chips ? "flex" : "none";
@@ -2910,6 +3028,32 @@ function openImagePreview(url, meta = {}) {
   }
 }
 
+if (e.imagePreviewZoomInBtn) {
+  e.imagePreviewZoomInBtn.addEventListener("click", () => {
+    previewScale = Math.min(4, previewScale + 0.3);
+    updatePreviewTransform();
+  });
+}
+
+if (e.imagePreviewZoomOutBtn) {
+  e.imagePreviewZoomOutBtn.addEventListener("click", () => {
+    previewScale = Math.max(0.5, previewScale - 0.3);
+    if (previewScale <= 1) { previewPanX = 0; previewPanY = 0; }
+    updatePreviewTransform();
+  });
+}
+
+if (e.imagePreviewZoomResetBtn) {
+  e.imagePreviewZoomResetBtn.addEventListener("click", resetPreviewTransform);
+}
+
+if (e.imagePreviewRotateBtn) {
+  e.imagePreviewRotateBtn.addEventListener("click", () => {
+    previewRotation = (previewRotation + 90) % 360;
+    updatePreviewTransform();
+  });
+}
+
 if (e.imagePreviewCloseBtn) {
   e.imagePreviewCloseBtn.addEventListener("click", () => {
     if (e.imagePreviewDialog) e.imagePreviewDialog.close();
@@ -2917,24 +3061,142 @@ if (e.imagePreviewCloseBtn) {
 }
 
 if (e.imagePreviewOpenBrowserBtn) {
-  e.imagePreviewOpenBrowserBtn.addEventListener("click", () => {
-    if (currentPreviewUrl) {
-      window.open(currentPreviewUrl, "_blank");
+  e.imagePreviewOpenBrowserBtn.addEventListener("click", async () => {
+    const urlToOpen = await getOrFetchViewUrl();
+    if (!urlToOpen) {
+      toast("Foto lokal ini belum tersimpan ke server. Simpan transaksi terlebih dahulu.", "warning");
+      return;
     }
+    window.open(urlToOpen, "_blank");
   });
 }
 
 if (e.imagePreviewCopyLinkBtn) {
   e.imagePreviewCopyLinkBtn.addEventListener("click", async () => {
-    if (!currentPreviewUrl) return;
+    const urlToCopy = await getOrFetchViewUrl();
+    if (!urlToCopy) {
+      toast("Foto ini belum tersimpan ke server. Simpan transaksi terlebih dahulu.", "warning");
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(currentPreviewUrl);
-      toast("Link foto berhasil disalin", "success");
+      await navigator.clipboard.writeText(urlToCopy);
+      toast("Link pratinjau web (token expired) berhasil disalin", "success");
     } catch (_) {
-      toast("Gagal menyalin link foto", "error");
+      toast("Gagal menyalin link web", "error");
     }
   });
 }
+
+if (e.imagePreviewDownloadBtn) {
+  e.imagePreviewDownloadBtn.addEventListener("click", async () => {
+    if (!currentPreviewUrl) return;
+    try {
+      const a = document.createElement("a");
+      a.href = currentPreviewUrl;
+      a.download = `bukti-qriskas-${Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast("Foto bukti berhasil diunduh", "success");
+    } catch (_) {
+      toast("Gagal mengunduh foto", "error");
+    }
+  });
+}
+
+if (e.imagePreviewFrame) {
+  e.imagePreviewFrame.addEventListener("wheel", (ev) => {
+    ev.preventDefault();
+    if (ev.deltaY < 0) previewScale = Math.min(4, previewScale + 0.15);
+    else previewScale = Math.max(0.5, previewScale - 0.15);
+    if (previewScale <= 1) { previewPanX = 0; previewPanY = 0; }
+    updatePreviewTransform();
+  }, { passive: false });
+
+  e.imagePreviewFrame.addEventListener("dblclick", () => {
+    if (previewScale > 1.1) {
+      resetPreviewTransform();
+    } else {
+      previewScale = 2;
+      updatePreviewTransform();
+    }
+  });
+
+  e.imagePreviewFrame.addEventListener("mousedown", (ev) => {
+    if (previewScale <= 1) return;
+    isPreviewDragging = true;
+    previewStartX = ev.clientX - previewPanX;
+    previewStartY = ev.clientY - previewPanY;
+    if (e.imagePreviewFrame) e.imagePreviewFrame.style.cursor = "grabbing";
+  });
+
+  window.addEventListener("mousemove", (ev) => {
+    if (!isPreviewDragging) return;
+    previewPanX = ev.clientX - previewStartX;
+    previewPanY = ev.clientY - previewStartY;
+    updatePreviewTransform();
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (isPreviewDragging) {
+      isPreviewDragging = false;
+      updatePreviewTransform();
+    }
+  });
+
+  let touchStartDist = 0, initialTouchScale = 1;
+  e.imagePreviewFrame.addEventListener("touchstart", (ev) => {
+    if (ev.touches.length === 2) {
+      touchStartDist = Math.hypot(ev.touches[0].clientX - ev.touches[1].clientX, ev.touches[0].clientY - ev.touches[1].clientY);
+      initialTouchScale = previewScale;
+    } else if (ev.touches.length === 1 && previewScale > 1) {
+      isPreviewDragging = true;
+      previewStartX = ev.touches[0].clientX - previewPanX;
+      previewStartY = ev.touches[0].clientY - previewPanY;
+    }
+  }, { passive: true });
+
+  e.imagePreviewFrame.addEventListener("touchmove", (ev) => {
+    if (ev.touches.length === 2 && touchStartDist > 0) {
+      const dist = Math.hypot(ev.touches[0].clientX - ev.touches[1].clientX, ev.touches[0].clientY - ev.touches[1].clientY);
+      previewScale = Math.min(4, Math.max(0.5, initialTouchScale * (dist / touchStartDist)));
+      updatePreviewTransform();
+    } else if (ev.touches.length === 1 && isPreviewDragging) {
+      previewPanX = ev.touches[0].clientX - previewStartX;
+      previewPanY = ev.touches[0].clientY - previewStartY;
+      updatePreviewTransform();
+    }
+  }, { passive: true });
+
+  e.imagePreviewFrame.addEventListener("touchend", () => {
+    isPreviewDragging = false;
+    touchStartDist = 0;
+  });
+}
+
+window.addEventListener("keydown", (ev) => {
+  if (e.imagePreviewDialog && e.imagePreviewDialog.open) {
+    if (ev.key === "Escape") {
+      e.imagePreviewDialog.close();
+    } else if (ev.key === "+" || ev.key === "=") {
+      ev.preventDefault();
+      previewScale = Math.min(4, previewScale + 0.3);
+      updatePreviewTransform();
+    } else if (ev.key === "-") {
+      ev.preventDefault();
+      previewScale = Math.max(0.5, previewScale - 0.3);
+      if (previewScale <= 1) { previewPanX = 0; previewPanY = 0; }
+      updatePreviewTransform();
+    } else if (ev.key === "r" || ev.key === "R") {
+      ev.preventDefault();
+      previewRotation = (previewRotation + 90) % 360;
+      updatePreviewTransform();
+    } else if (ev.key === "0") {
+      ev.preventDefault();
+      resetPreviewTransform();
+    }
+  }
+});
 
 if (e.imagePreviewDialog) {
   e.imagePreviewDialog.addEventListener("click", (ev) => {
@@ -2951,6 +3213,7 @@ if (e.imagePreviewDialog) {
   });
 }
 
+// Unified click preview for all image thumbnails across the app
 if (e.preview) {
   e.preview.style.cursor = "pointer";
   e.preview.title = "Klik untuk memperbesar pratinjau foto";
@@ -2960,8 +3223,76 @@ if (e.preview) {
         title: "Pratinjau Hasil Foto",
         time: e.displayTime?.value || "",
         date: e.displayDate?.value || "",
-        amount: amount,
-        note: (surplusMode || cashoutMode || expenseMode) ? currentNote : ""
+        amount: amount || B,
+        isExpense: isExpenseMode,
+        badgeLabel: isExpenseMode ? "STRUK CASH" : isSurplusMode ? "SURPLUS" : isCashoutMode ? "TUKAR CASH" : isRevisedMode ? "REVISI" : "QRIS",
+        badgeClass: isExpenseMode ? "badge-expense" : isSurplusMode ? "badge-surplus" : isCashoutMode ? "badge-cashout" : isRevisedMode ? "badge-revised" : "",
+        note: currentNote || h
+      });
+    }
+  });
+}
+
+if (e.surplusPreviewImg) {
+  e.surplusPreviewImg.style.cursor = "pointer";
+  e.surplusPreviewImg.title = "Klik untuk memperbesar foto bukti";
+  e.surplusPreviewImg.addEventListener("click", () => {
+    if (e.surplusPreviewImg.src) {
+      openImagePreview(e.surplusPreviewImg.src, {
+        title: "Pratinjau Bukti Surplus",
+        amount: Number((e.surplusAmount?.value || "").replace(/\D/g, "")) || 0,
+        badgeLabel: "SURPLUS",
+        badgeClass: "badge-surplus",
+        note: e.surplusNote?.value || ""
+      });
+    }
+  });
+}
+
+if (e.cashoutPreviewImg) {
+  e.cashoutPreviewImg.style.cursor = "pointer";
+  e.cashoutPreviewImg.title = "Klik untuk memperbesar foto bukti";
+  e.cashoutPreviewImg.addEventListener("click", () => {
+    if (e.cashoutPreviewImg.src) {
+      openImagePreview(e.cashoutPreviewImg.src, {
+        title: "Pratinjau Bukti Tukar Cash",
+        amount: Number((e.cashoutAmount?.value || "").replace(/\D/g, "")) || 0,
+        badgeLabel: "TUKAR CASH",
+        badgeClass: "badge-cashout",
+        note: e.cashoutNote?.value || ""
+      });
+    }
+  });
+}
+
+if (e.revisedPreviewImg) {
+  e.revisedPreviewImg.style.cursor = "pointer";
+  e.revisedPreviewImg.title = "Klik untuk memperbesar foto bukti";
+  e.revisedPreviewImg.addEventListener("click", () => {
+    if (e.revisedPreviewImg.src) {
+      openImagePreview(e.revisedPreviewImg.src, {
+        title: "Pratinjau Bukti Revisi",
+        amount: Number((e.revisedAmount?.value || "").replace(/\D/g, "")) || 0,
+        badgeLabel: "REVISI",
+        badgeClass: "badge-revised",
+        note: e.revisedNote?.value || ""
+      });
+    }
+  });
+}
+
+if (e.expensePreviewImg) {
+  e.expensePreviewImg.style.cursor = "pointer";
+  e.expensePreviewImg.title = "Klik untuk memperbesar foto bukti";
+  e.expensePreviewImg.addEventListener("click", () => {
+    if (e.expensePreviewImg.src) {
+      openImagePreview(e.expensePreviewImg.src, {
+        title: "Pratinjau Nota Belanja Cash",
+        amount: Number((e.expenseAmount?.value || "").replace(/\D/g, "")) || 0,
+        isExpense: true,
+        badgeLabel: "STRUK CASH",
+        badgeClass: "badge-expense",
+        note: e.expenseNote?.value || ""
       });
     }
   });

@@ -9,9 +9,246 @@ async function sign(value, secret) {
   const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return toHex(await crypto.subtle.sign("HMAC", key, encoder.encode(value)));
 }
-async function sessionCookie(username, secret) {
-  const value = `${username}.${Math.floor(Date.now() / 1000) + 86400 * 7}`;
-  return `${encodeURIComponent(value)}.${await sign(value, secret)}`;
+async function generateViewToken(imageKey, expiresInSeconds = 86400 * 2, secret) {
+  const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
+  const payload = `${imageKey}:${exp}`;
+  const sig = await sign(payload, secret);
+  return { exp, sig, key: imageKey };
+}
+async function verifyViewToken(imageKey, expStr, sig, secret) {
+  const exp = Number(expStr);
+  if (!exp || isNaN(exp) || exp < Date.now() / 1000) return false;
+  const payload = `${imageKey}:${exp}`;
+  const expectedSig = await sign(payload, secret);
+  return sig === expectedSig;
+}
+function makeViewUrl(origin, imageKey, exp, sig) {
+  return `${origin}/view?key=${encodeURIComponent(imageKey)}&exp=${exp}&sig=${sig}`;
+}
+function makeRawViewUrl(origin, imageKey, exp, sig) {
+  return `${origin}/view/raw?key=${encodeURIComponent(imageKey)}&exp=${exp}&sig=${sig}`;
+}
+function formatExpTime(timestamp) {
+  try {
+    const d = new Date(timestamp * 1000);
+    return new Intl.DateTimeFormat("id-ID", {
+      timeZone: "Asia/Jakarta",
+      dateStyle: "medium",
+      timeStyle: "short"
+    }).format(d) + " WIB";
+  } catch (_) {
+    return "";
+  }
+}
+function renderWebViewerPage({ key = "", exp = 0, sig = "", obj = null, origin = "", error = null }) {
+  const headers = new Headers({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+  if (error) {
+    return new Response(`<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0a0903"><title>Tautan Kedaluwarsa • QRIS Kas</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at 50% 0,#3a3006,#0a0903 55%);color:#fffef5;font-family:system-ui,-apple-system,sans-serif}.container{width:min(100%,440px);text-align:center}.box{background:#141208;border:1px solid #3d3312;border-radius:24px;padding:32px 24px;box-shadow:0 25px 70px rgba(0,0,0,0.85)}.badge{display:inline-flex;align-items:center;gap:6px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);padding:6px 14px;border-radius:999px;font-size:12px;font-weight:700;margin-bottom:16px}.icon{width:56px;height:56px;margin:0 auto 16px;background:rgba(239,68,68,0.1);border-radius:18px;display:flex;align-items:center;justify-content:center;color:#ef4444}h1{margin:0 0 10px;font-size:22px;color:#fffef5;font-weight:900}p{margin:0 0 24px;color:#a89f82;font-size:14px;line-height:1.6}.btn{display:inline-block;width:100%;padding:14px 20px;background:linear-gradient(135deg,#ffe566,#ffd000);color:#0d0b00;text-decoration:none;font-weight:900;font-size:15px;border-radius:14px;transition:transform .15s ease}.btn:active{transform:scale(0.98)}.foot{margin-top:20px;font-size:11.5px;color:#786f56}</style></head><body><div class="container"><div class="box"><div class="badge"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>Akses Dibatasi</span></div><div class="icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h1>Tautan Tidak Aktif / Kedaluwarsa</h1><p>${error}</p><a href="${origin}/login" class="btn">Masuk ke Aplikasi Kasir</a><div class="foot">QRIS Kas • Tahunya Krispiya &bull; Keamanan Terenkripsi</div></div></div></body></html>`, { status: 401, headers });
+  }
+
+  const meta = (obj && obj.customMetadata) || {};
+  let amount = meta.amount ? Number(meta.amount) : 0;
+  if (!amount && key) {
+    const amtMatch = key.match(/-(\d+)-(?:regular|surplus|cashout|expense|pending)-/);
+    if (amtMatch) amount = Number(amtMatch[1]);
+  }
+  const isSurplus = meta.isSurplus === "true" || key.includes("-surplus-");
+  const isCashout = meta.isCashout === "true" || key.includes("-cashout-");
+  const isRevised = meta.isRevised === "true";
+  const isExpense = meta.isExpense === "true" || key.includes("-expense-");
+  const isPending = meta.isPending === "true" || key.includes("-pending-");
+  const note = meta.note || "";
+  let savedAt = meta.savedAt || "";
+  if (!savedAt && key) {
+    const dateMatch = key.match(/^images\/(\d{4})\/(\d{2})\/(\d{2})\/(\d{2})(\d{2})(\d{2})/);
+    if (dateMatch) {
+      savedAt = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]} ${dateMatch[4]}:${dateMatch[5]}:${dateMatch[6]} WIB`;
+    }
+  }
+
+  const tagLabel = isExpense ? "STRUK BELANJA CASH" : isSurplus ? "SURPLUS KAS" : isCashout ? "TUKAR KE CASH" : isRevised ? "REVISI / SUSULAN" : isPending ? "FOTO PENDING" : "BUKTI QRIS";
+  const tagColor = isExpense ? "#f43f5e" : isSurplus ? "#38bdf8" : isCashout ? "#fbbf24" : isRevised ? "#c084fc" : isPending ? "#22d3ee" : "#ffd000";
+  const tagBg = isExpense ? "rgba(244,63,94,0.15)" : isSurplus ? "rgba(56,189,248,0.15)" : isCashout ? "rgba(251,191,36,0.15)" : isRevised ? "rgba(192,132,252,0.18)" : isPending ? "rgba(34,211,238,0.15)" : "rgba(255,208,0,0.15)";
+  const expLabel = formatExpTime(exp);
+  const rawUrl = makeRawViewUrl(origin, key, exp, sig);
+  const formattedAmount = amount ? new Intl.NumberFormat("id-ID").format(amount) : "0";
+
+  return new Response(`<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0a0903"><title>Lihat Bukti Transaksi • QRIS Kas</title><style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#090803;color:#fffef5;font-family:system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+.page-wrap{max-width:880px;margin:0 auto;padding:16px 14px 40px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0 16px;border-bottom:1px solid #28210b;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#ffe566,#ffd000);color:#0d0b00;display:grid;place-items:center;font-weight:900;font-size:20px;box-shadow:0 4px 14px rgba(255,208,0,0.3)}
+.brand-title{font-size:16px;font-weight:900;color:#fffef5;margin:0}
+.brand-sub{font-size:11px;color:#a89f82;margin:1px 0 0}
+.secure-pill{display:inline-flex;align-items:center;gap:6px;background:rgba(255,208,0,0.08);border:1px solid rgba(255,208,0,0.22);color:#ffd000;padding:5px 12px;border-radius:999px;font-size:11px;font-weight:700}
+.card{background:#120f06;border:1px solid #342a0e;border-radius:20px;margin-top:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.8)}
+.card-header{padding:14px 18px;background:#171407;border-bottom:1px solid #2c230c;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.card-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.amount-badge{font-size:18px;font-weight:900;color:${tagColor};background:${tagBg};border:1px solid ${tagColor}40;padding:4px 12px;border-radius:10px}
+.type-badge{font-size:11px;font-weight:800;color:${tagColor};border:1px solid ${tagColor}50;padding:4px 10px;border-radius:8px;text-transform:uppercase;letter-spacing:0.04em}
+.time-info{font-size:12px;color:#d4caa8;display:flex;align-items:center;gap:6px}
+.note-box{padding:10px 18px;background:#0d0b04;border-bottom:1px solid #241c09;font-size:12px;color:#f3ecd8;display:flex;align-items:flex-start;gap:8px}
+.note-box strong{color:#ffd000;font-weight:800;flex-shrink:0}
+.viewer-wrap{position:relative;background:#050402;min-height:360px;max-height:74vh;display:flex;align-items:center;justify-content:center;overflow:hidden;user-select:none;touch-action:none}
+.viewer-img{max-width:100%;max-height:74vh;object-fit:contain;transition:transform .12s ease-out;transform-origin:center center;display:block}
+.viewer-toolbar{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:6px;background:rgba(18,15,6,0.85);backdrop-filter:blur(10px);border:1px solid #4a3c14;border-radius:999px;padding:4px 8px;box-shadow:0 8px 30px rgba(0,0,0,0.8);z-index:10}
+.tool-btn{background:transparent;border:0;color:#fffef5;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;cursor:pointer;transition:all .15s}
+.tool-btn:hover{background:rgba(255,208,0,0.18);color:#ffd000}
+.tool-btn:active{transform:scale(0.92)}
+.zoom-level-badge{position:absolute;top:12px;right:12px;background:rgba(0,0,0,0.7);border:1px solid #342a0e;color:#ffd000;font-size:11px;font-weight:800;padding:3px 8px;border-radius:6px;pointer-events:none}
+.card-footer{padding:14px 18px;background:#141107;border-top:1px solid #2c230c;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.download-btn{display:inline-flex;align-items:center;gap:6px;padding:10px 16px;background:linear-gradient(135deg,#ffe566,#ffd000);color:#0d0b00;font-weight:800;font-size:13px;border-radius:12px;text-decoration:none;transition:transform .15s}
+.download-btn:active{transform:scale(0.98)}
+.foot-info{font-size:11px;color:#8a8064;line-height:1.5}
+.notice-box{margin-top:18px;background:#0e0b04;border:1px solid #281f08;border-radius:14px;padding:12px 16px;font-size:11.5px;color:#a89f82;line-height:1.6;display:flex;align-items:center;gap:10px}
+.notice-box svg{color:#ffd000;flex-shrink:0}
+.login-link{color:#ffd000;text-decoration:none;font-weight:700}
+.login-link:hover{text-decoration:underline}
+</style></head><body>
+<div class="page-wrap">
+  <header>
+    <div class="brand">
+      <div class="brand-logo">Q</div>
+      <div>
+        <h1 class="brand-title">QRIS Kas • Tahunya Krispiya</h1>
+        <p class="brand-sub">Pratinjau Bukti Digital Resmi</p>
+      </div>
+    </div>
+    <div class="secure-pill">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span>Tautan Sementara &bull; Exp: ${expLabel || "48 Jam"}</span>
+    </div>
+  </header>
+
+  <main class="card">
+    <div class="card-header">
+      <div class="card-meta">
+        <span class="amount-badge">Rp ${formattedAmount}</span>
+        <span class="type-badge">${tagLabel}</span>
+      </div>
+      ${savedAt ? `<div class="time-info"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>${savedAt}</span></div>` : ""}
+    </div>
+
+    ${note ? `<div class="note-box"><strong>Keterangan:</strong><span>${note.replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}</span></div>` : ""}
+
+    <div class="viewer-wrap" id="viewerWrap">
+      <img src="${rawUrl}" alt="Bukti Transaksi" class="viewer-img" id="viewerImg" draggable="false">
+      <div class="zoom-level-badge" id="zoomBadge">100%</div>
+      <div class="viewer-toolbar">
+        <button type="button" class="tool-btn" id="zoomInBtn" title="Perbesar (+)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </button>
+        <button type="button" class="tool-btn" id="zoomOutBtn" title="Perkecil (-)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </button>
+        <button type="button" class="tool-btn" id="resetBtn" title="Reset (1:1)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+        </button>
+        <button type="button" class="tool-btn" id="rotateBtn" title="Putar 90 Derajat (R)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="card-footer">
+      <a href="${rawUrl}" download="bukti-transaksi.jpg" class="download-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>Unduh Foto Bukti</span>
+      </a>
+      <div class="foot-info">
+        Pencatatan kasir terlindungi enkripsi HMAC-SHA256.<br>
+        Akses khusus lembar bukti terpilih.
+      </div>
+    </div>
+  </main>
+
+  <aside class="notice-box">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    <div>
+      Halaman ini beroperasi dalam mode pratinjau publik bertoken terbatas. Fitur kelola kasir dan riwayat toko tetap terlindungi. Kasir toko? <a href="${origin}/login" class="login-link">Masuk ke aplikasi kasir &rarr;</a>
+    </div>
+  </aside>
+</div>
+
+<script>
+(()=>{
+  let scale = 1, rotation = 0, panX = 0, panY = 0, isDragging = false, startX = 0, startY = 0;
+  const img = document.getElementById("viewerImg");
+  const wrap = document.getElementById("viewerWrap");
+  const badge = document.getElementById("zoomBadge");
+
+  function update() {
+    img.style.transform = "translate(" + panX + "px, " + panY + "px) scale(" + scale + ") rotate(" + rotation + "deg)";
+    badge.textContent = Math.round(scale * 100) + "%";
+    wrap.style.cursor = scale > 1 ? (isDragging ? "grabbing" : "grab") : "default";
+  }
+
+  document.getElementById("zoomInBtn").onclick = () => { scale = Math.min(4, scale + 0.3); update(); };
+  document.getElementById("zoomOutBtn").onclick = () => { scale = Math.max(0.5, scale - 0.3); if (scale <= 1) { panX = 0; panY = 0; } update(); };
+  document.getElementById("resetBtn").onclick = () => { scale = 1; rotation = 0; panX = 0; panY = 0; update(); };
+  document.getElementById("rotateBtn").onclick = () => { rotation = (rotation + 90) % 360; update(); };
+
+  wrap.addEventListener("wheel", (ev) => {
+    ev.preventDefault();
+    if (ev.deltaY < 0) scale = Math.min(4, scale + 0.15);
+    else scale = Math.max(0.5, scale - 0.15);
+    if (scale <= 1) { panX = 0; panY = 0; }
+    update();
+  }, { passive: false });
+
+  wrap.addEventListener("dblclick", () => {
+    if (scale > 1.1) { scale = 1; panX = 0; panY = 0; }
+    else { scale = 2; }
+    update();
+  });
+
+  wrap.addEventListener("mousedown", (ev) => {
+    if (scale <= 1) return;
+    isDragging = true;
+    startX = ev.clientX - panX;
+    startY = ev.clientY - panY;
+    wrap.style.cursor = "grabbing";
+  });
+  window.addEventListener("mousemove", (ev) => {
+    if (!isDragging) return;
+    panX = ev.clientX - startX;
+    panY = ev.clientY - startY;
+    update();
+  });
+  window.addEventListener("mouseup", () => {
+    if (isDragging) { isDragging = false; update(); }
+  });
+
+  let touchStartDist = 0, initialScale = 1;
+  wrap.addEventListener("touchstart", (ev) => {
+    if (ev.touches.length === 2) {
+      touchStartDist = Math.hypot(ev.touches[0].clientX - ev.touches[1].clientX, ev.touches[0].clientY - ev.touches[1].clientY);
+      initialScale = scale;
+    } else if (ev.touches.length === 1 && scale > 1) {
+      isDragging = true;
+      startX = ev.touches[0].clientX - panX;
+      startY = ev.touches[0].clientY - panY;
+    }
+  }, { passive: true });
+
+  wrap.addEventListener("touchmove", (ev) => {
+    if (ev.touches.length === 2 && touchStartDist > 0) {
+      const dist = Math.hypot(ev.touches[0].clientX - ev.touches[1].clientX, ev.touches[0].clientY - ev.touches[1].clientY);
+      scale = Math.min(4, Math.max(0.5, initialScale * (dist / touchStartDist)));
+      update();
+    } else if (ev.touches.length === 1 && isDragging) {
+      panX = ev.touches[0].clientX - startX;
+      panY = ev.touches[0].clientY - startY;
+      update();
+    }
+  }, { passive: true });
+
+  wrap.addEventListener("touchend", () => { isDragging = false; touchStartDist = 0; });
+})();
+</script>
+</body></html>`, { status: 200, headers });
 }
 async function authenticated(request, env) {
   if (env.DEV_NO_AUTH === "true") return "admin";
@@ -129,10 +366,82 @@ export default {
     if (url.pathname === "/sw.js" || url.pathname === "/manifest.webmanifest" || url.pathname.endsWith(".webmanifest")) {
       return env.ASSETS.fetch(request);
     }
+
+    // === PUBLIC VIEW WITH EXPIRING TOKEN (Tanpa Perlu Login) ===
+    if (url.pathname === "/view" || url.pathname === "/v" || url.pathname === "/view/raw" || url.pathname === "/v/raw") {
+      let key = url.searchParams.get("key") || "";
+      let exp = url.searchParams.get("exp") || "";
+      let sig = url.searchParams.get("sig") || "";
+
+      if (!key && url.searchParams.get("t")) {
+        const parts = url.searchParams.get("t").split(".");
+        if (parts.length >= 3) {
+          sig = parts.pop();
+          exp = parts.pop();
+          key = decodeURIComponent(parts.join("."));
+        }
+      }
+
+      const isRaw = url.pathname.endsWith("/raw");
+
+      if (!key || !exp || !sig || !key.startsWith("images/")) {
+        return isRaw
+          ? new Response("Tautan tidak valid.", { status: 400 })
+          : renderWebViewerPage({ error: "Tautan pratinjau tidak valid.", origin: url.origin });
+      }
+
+      const isValid = await verifyViewToken(key, exp, sig, env.AUTH_SECRET);
+      if (!isValid) {
+        const isExpired = Number(exp) && Number(exp) < Date.now() / 1000;
+        const msg = isExpired
+          ? "Tautan pratinjau ini sudah kedaluwarsa (expired). Demi keamanan privasi data transaksi toko, silakan minta tautan baru dari kasir."
+          : "Tautan pratinjau tidak sah atau tanda tangan token salah.";
+        return isRaw
+          ? new Response(msg, { status: 401 })
+          : renderWebViewerPage({ error: msg, origin: url.origin });
+      }
+
+      const obj = await env.RECEIPTS.get(key);
+      if (!obj) {
+        return isRaw
+          ? new Response("Foto tidak ditemukan.", { status: 404 })
+          : renderWebViewerPage({ error: "Foto struk tidak ditemukan atau telah dibersihkan oleh siklus retensi otomatis.", origin: url.origin });
+      }
+
+      if (isRaw) {
+        return new Response(obj.body, {
+          status: 200,
+          headers: {
+            "content-type": obj.httpMetadata?.contentType || "image/jpeg",
+            "cache-control": "private, max-age=3600",
+            "x-content-type-options": "nosniff"
+          }
+        });
+      }
+
+      return renderWebViewerPage({ key, exp, sig, obj, origin: url.origin });
+    }
+
     const role = await authenticated(request, env);
     if (!role) {
       if (url.pathname.startsWith("/api/")) return json({ error: "Sesi login berakhir." }, 401);
       return Response.redirect(`${url.origin}/login`, 302);
+    }
+
+    if (url.pathname === "/api/share-token" && request.method === "GET") {
+      const key = url.searchParams.get("key");
+      if (!key || typeof key !== "string" || !key.startsWith("images/")) {
+        return json({ error: "Key foto tidak valid." }, 400);
+      }
+      const expDays = Math.min(7, Math.max(1, Number(url.searchParams.get("days") || 2)));
+      const token = await generateViewToken(key, 86400 * expDays, env.AUTH_SECRET);
+      return json({
+        key,
+        exp: token.exp,
+        expiresIn: 86400 * expDays,
+        viewUrl: makeViewUrl(url.origin, key, token.exp, token.sig),
+        rawViewUrl: makeRawViewUrl(url.origin, key, token.exp, token.sig)
+      });
     }
     
     if (url.pathname === "/api/receipts" && request.method === "GET") {
@@ -144,7 +453,15 @@ export default {
         const listed = await env.RECEIPTS.list({ prefix: `records/${year}/${month}/${day}/`, limit: 1000 });
         const records = (await Promise.all(listed.objects.map(async object => {
           const stored = await env.RECEIPTS.get(object.key);
-          return stored ? { ...(await stored.json()), recordKey: object.key } : null;
+          if (!stored) return null;
+          const record = await stored.json();
+          const token = await generateViewToken(record.imageKey, 86400 * 2, env.AUTH_SECRET);
+          return {
+            ...record,
+            recordKey: object.key,
+            viewUrl: makeViewUrl(url.origin, record.imageKey, token.exp, token.sig),
+            rawViewUrl: makeRawViewUrl(url.origin, record.imageKey, token.exp, token.sig)
+          };
         }))).filter(Boolean).sort((a, b) => a.savedAt.localeCompare(b.savedAt));
         const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
         return json({ role, date: requested, records: records.map(record => ({ ...record, imageUrl: `${publicBase}/${record.imageKey}` })) });
@@ -306,8 +623,11 @@ export default {
           })
         ]);
 
+        const token = await generateViewToken(imageKey, 86400 * 2, env.AUTH_SECRET);
+        const viewUrl = makeViewUrl(url.origin, imageKey, token.exp, token.sig);
+        const rawViewUrl = makeRawViewUrl(url.origin, imageKey, token.exp, token.sig);
         const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
-        return json({ savedAt, recordKey, imageKey, imageUrl: `${publicBase}/${imageKey}`, isPending: true });
+        return json({ savedAt, recordKey, imageKey, imageUrl: `${publicBase}/${imageKey}`, viewUrl, rawViewUrl, isPending: true });
       } catch (error) {
         return json({ error: "Gagal menyimpan foto pending.", detail: error.message }, 500);
       }
@@ -325,7 +645,13 @@ export default {
           if (!stored) return null;
           const data = await stored.json();
           if (!data.isPending) return null;
-          return { ...data, recordKey: object.key };
+          const token = await generateViewToken(data.imageKey, 86400 * 2, env.AUTH_SECRET);
+          return {
+            ...data,
+            recordKey: object.key,
+            viewUrl: makeViewUrl(url.origin, data.imageKey, token.exp, token.sig),
+            rawViewUrl: makeRawViewUrl(url.origin, data.imageKey, token.exp, token.sig)
+          };
         }))).filter(Boolean).sort((a, b) => a.savedAt.localeCompare(b.savedAt));
         const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
         return json({ role, date: requested, records: records.map(r => ({ ...r, imageUrl: `${publicBase}/${r.imageKey}` })) });
@@ -359,8 +685,11 @@ export default {
           httpMetadata: { contentType: "application/json" }
         });
 
+        const token = await generateViewToken(record.imageKey, 86400 * 2, env.AUTH_SECRET);
+        const viewUrl = makeViewUrl(url.origin, record.imageKey, token.exp, token.sig);
+        const rawViewUrl = makeRawViewUrl(url.origin, record.imageKey, token.exp, token.sig);
         const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
-        return json({ confirmed: true, record: { ...record, recordKey, imageUrl: `${publicBase}/${record.imageKey}` } });
+        return json({ confirmed: true, record: { ...record, recordKey, imageUrl: `${publicBase}/${record.imageKey}`, viewUrl, rawViewUrl } });
       } catch (error) {
         return json({ error: "Gagal mengkonfirmasi pending.", detail: error.message }, 500);
       }
@@ -427,9 +756,12 @@ export default {
             httpMetadata: { contentType: "application/json" }
           })
         ]);
+        const token = await generateViewToken(imageKey, 86400 * 2, env.AUTH_SECRET);
+        const viewUrl = makeViewUrl(url.origin, imageKey, token.exp, token.sig);
+        const rawViewUrl = makeRawViewUrl(url.origin, imageKey, token.exp, token.sig);
         const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
         if (!publicBase || publicBase.includes("example.com")) return json({ error: "R2_PUBLIC_URL belum diatur.", saved: true }, 500);
-        return json({ amount, savedAt, isSurplus, isCashout, isRevised, isExpense, note, imageUrl: `${publicBase}/${imageKey}` });
+        return json({ amount, savedAt, isSurplus, isCashout, isRevised, isExpense, note, imageUrl: `${publicBase}/${imageKey}`, viewUrl, rawViewUrl });
       } catch (error) {
         return json({ error: "Gagal menyimpan bukti. Coba lagi.", detail: error.message }, 500);
       }
