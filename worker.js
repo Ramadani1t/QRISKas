@@ -14,7 +14,7 @@ async function sign(value, secret) {
   const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return toHex(await crypto.subtle.sign("HMAC", key, encoder.encode(value)));
 }
-async function generateViewToken(imageKey, expiresInSeconds = 86400 * 2, secret) {
+async function generateViewToken(imageKey, expiresInSeconds = 86400, secret) {
   const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
   const payload = `${imageKey}:${exp}`;
   const sig = await sign(payload, secret);
@@ -495,14 +495,17 @@ export default {
       if (!key || typeof key !== "string" || !key.startsWith("images/")) {
         return json({ error: "Key foto tidak valid." }, 400);
       }
-      // Sesi intip 1 hari (86400 detik = 24 jam)
+      // Sesi web pratinjau 1 hari (86400 detik = 24 jam)
       const token = await generateViewToken(key, 86400, env.AUTH_SECRET);
-      const intipUrl = `${url.origin}/intip?key=${encodeURIComponent(key)}&exp=${token.exp}&sig=${token.sig}`;
+      const viewUrl = makeViewUrl(url.origin, key, token.exp, token.sig);
+      const rawViewUrl = makeRawViewUrl(url.origin, key, token.exp, token.sig);
       return json({
         key,
         exp: token.exp,
         expiresIn: 86400,
-        intipUrl
+        viewUrl,
+        rawViewUrl,
+        intipUrl: viewUrl
       });
     }
 
@@ -511,7 +514,7 @@ export default {
       if (!key || typeof key !== "string" || !key.startsWith("images/")) {
         return json({ error: "Key foto tidak valid." }, 400);
       }
-      const expDays = Math.min(7, Math.max(1, Number(url.searchParams.get("days") || 2)));
+      const expDays = Math.min(7, Math.max(1, Number(url.searchParams.get("days") || 1)));
       const token = await generateViewToken(key, 86400 * expDays, env.AUTH_SECRET);
       return json({
         key,
@@ -533,7 +536,7 @@ export default {
           const stored = await env.RECEIPTS.get(object.key);
           if (!stored) return null;
           const record = await stored.json();
-          const token = await generateViewToken(record.imageKey, 86400 * 2, env.AUTH_SECRET);
+          const token = await generateViewToken(record.imageKey, 86400, env.AUTH_SECRET);
           return {
             ...record,
             recordKey: object.key,
@@ -707,7 +710,7 @@ export default {
           })
         ]);
 
-        const token = await generateViewToken(imageKey, 86400 * 2, env.AUTH_SECRET);
+        const token = await generateViewToken(imageKey, 86400, env.AUTH_SECRET);
         const viewUrl = makeViewUrl(url.origin, imageKey, token.exp, token.sig);
         const rawViewUrl = makeRawViewUrl(url.origin, imageKey, token.exp, token.sig);
         const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
@@ -729,7 +732,7 @@ export default {
           if (!stored) return null;
           const data = await stored.json();
           if (!data.isPending) return null;
-          const token = await generateViewToken(data.imageKey, 86400 * 2, env.AUTH_SECRET);
+          const token = await generateViewToken(data.imageKey, 86400, env.AUTH_SECRET);
           return {
             ...data,
             recordKey: object.key,
@@ -769,7 +772,7 @@ export default {
           httpMetadata: { contentType: "application/json" }
         });
 
-        const token = await generateViewToken(record.imageKey, 86400 * 2, env.AUTH_SECRET);
+        const token = await generateViewToken(record.imageKey, 86400, env.AUTH_SECRET);
         const viewUrl = makeViewUrl(url.origin, record.imageKey, token.exp, token.sig);
         const rawViewUrl = makeRawViewUrl(url.origin, record.imageKey, token.exp, token.sig);
         const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
@@ -840,12 +843,12 @@ export default {
             httpMetadata: { contentType: "application/json" }
           })
         ]);
-        const token = await generateViewToken(imageKey, 86400 * 2, env.AUTH_SECRET);
+        const token = await generateViewToken(imageKey, 86400, env.AUTH_SECRET);
         const viewUrl = makeViewUrl(url.origin, imageKey, token.exp, token.sig);
         const rawViewUrl = makeRawViewUrl(url.origin, imageKey, token.exp, token.sig);
         const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
         if (!publicBase || publicBase.includes("example.com")) return json({ error: "R2_PUBLIC_URL belum diatur.", saved: true }, 500);
-        return json({ amount, savedAt, isSurplus, isCashout, isRevised, isExpense, note, imageUrl: `${publicBase}/${imageKey}`, viewUrl, rawViewUrl });
+        return json({ amount, savedAt, isSurplus, isCashout, isRevised, isExpense, note, imageKey, recordKey, imageUrl: `${publicBase}/${imageKey}`, viewUrl, rawViewUrl });
       } catch (error) {
         return json({ error: "Gagal menyimpan bukti. Coba lagi.", detail: error.message }, 500);
       }

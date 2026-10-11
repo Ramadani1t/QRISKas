@@ -44,9 +44,14 @@ const e=Object.fromEntries(ids.map(id=>[id,$(id)]));
 let stream,imageBlob,amount=0;
 
 let lastSavedImageKey = "";
+let lastSavedViewUrl = "";
 async function getOrGenerateIntipUrl(keyOrUrl) {
   if (!keyOrUrl) return "";
-  let key = keyOrUrl;
+  let key = String(keyOrUrl).trim();
+  // Jika sudah berupa web pratinjau yang valid (/view?key=...&sig=...), langsung gunakan
+  if ((key.includes("/view?") || key.includes("/v?")) && key.includes("sig=")) {
+    return key;
+  }
   if (key.includes("/images/")) {
     const m = key.match(/images\/\d{4}\/\d{2}\/\d{2}\/[^?#\s]+/);
     if (m) key = m[0];
@@ -54,7 +59,7 @@ async function getOrGenerateIntipUrl(keyOrUrl) {
   if (!key.startsWith("images/")) return keyOrUrl;
 
   try {
-    toast("Membuat sesi intip 1 hari...", "loading");
+    toast("Membuat sesi web pratinjau 1 hari...", "loading");
     const startTime = Date.now();
     const res = await fetch(`/api/intip-session?key=${encodeURIComponent(key)}`);
     const elapsed = Date.now() - startTime;
@@ -64,6 +69,7 @@ async function getOrGenerateIntipUrl(keyOrUrl) {
     }
     if (res.ok) {
       const data = await res.json();
+      if (data.viewUrl) return data.viewUrl;
       if (data.intipUrl) return data.intipUrl;
     }
   } catch (_) {}
@@ -1081,6 +1087,8 @@ async function save(){
 
     const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(data.savedAt));
     const line=formatReceiptLine(time,data.amount,data.isSurplus,data.isCashout,data.isRevised,data.note,data.isExpense);
+    lastSavedImageKey = data.imageKey || "";
+    lastSavedViewUrl = data.viewUrl || "";
     e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
@@ -1386,7 +1394,8 @@ async function saveSurplus(ev){
 
     const line=formatReceiptLine(time,data.amount,true,false,false,data.note);
     lastSavedImageKey = data.imageKey || "";
-    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    lastSavedViewUrl = data.viewUrl || "";
+    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
     if(e.surplusDialog)e.surplusDialog.close();
 
     e.result.classList.add("hidden");
@@ -1502,7 +1511,8 @@ async function saveCashout(ev){
 
     const line=formatReceiptLine(time,data.amount,false,true,data.isRevised,data.note);
     lastSavedImageKey = data.imageKey || "";
-    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    lastSavedViewUrl = data.viewUrl || "";
+    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
     if(e.cashoutDialog)e.cashoutDialog.close();
 
     e.result.classList.add("hidden");
@@ -1703,7 +1713,8 @@ async function saveRevised(ev){
 
     const line=formatReceiptLine(time,data.amount,false,false,true,data.note);
     lastSavedImageKey = data.imageKey || "";
-    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    lastSavedViewUrl = data.viewUrl || "";
+    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
     if(e.revisedDialog)e.revisedDialog.close();
 
     e.result.classList.add("hidden");
@@ -1907,7 +1918,8 @@ async function saveExpense(ev){
 
     const line=formatReceiptLine(time,data.amount,false,false,false,data.note,true);
     lastSavedImageKey = data.imageKey || "";
-    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    lastSavedViewUrl = data.viewUrl || "";
+    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
     if(e.expenseDialog)e.expenseDialog.close();
 
     e.result.classList.add("hidden");
@@ -2243,14 +2255,10 @@ async function loadHistory(init=false){
         btn.textContent = "⏳...";
         try {
           let textLine = line;
-          if (r.imageKey) {
-            const intipUrl = await getOrGenerateIntipUrl(r.imageKey);
-            textLine += ` gambar ${intipUrl || r.imageUrl}`;
-          } else {
-            textLine += ` gambar ${r.imageUrl}`;
-          }
+          const viewLink = r.viewUrl || (r.imageKey ? await getOrGenerateIntipUrl(r.imageKey) : r.imageUrl);
+          textLine += ` gambar ${viewLink}`;
           await navigator.clipboard.writeText(textLine);
-          toast("Rincian transaksi & link intip 1 hari disalin", "success");
+          toast("Rincian transaksi & tautan pratinjau 1 hari disalin", "success");
         } finally {
           btn.disabled = false;
           btn.textContent = oldText;
@@ -2838,18 +2846,29 @@ e.share.onclick = async () => {
 
   try {
     let text = e.shareText.textContent;
-    if (lastSavedImageKey) {
-      const intipUrl = await getOrGenerateIntipUrl(lastSavedImageKey);
-      if (intipUrl) {
+    const targetKey = lastSavedImageKey || (text.match(/images\/\d{4}\/\d{2}\/\d{2}\/[^?#\s]+/) ? text.match(/images\/\d{4}\/\d{2}\/\d{2}\/[^?#\s]+/)[0] : "");
+
+    if (lastSavedViewUrl) {
+      if (text.includes(" gambar ")) {
+        text = text.replace(/ gambar \S+/, ` gambar ${lastSavedViewUrl}`);
+      } else {
+        text += ` gambar ${lastSavedViewUrl}`;
+      }
+      e.shareText.textContent = text;
+      toast("Sesi web pratinjau 1 hari siap dibagikan!", "success");
+    } else if (targetKey) {
+      const viewUrl = await getOrGenerateIntipUrl(targetKey);
+      if (viewUrl) {
+        lastSavedViewUrl = viewUrl;
         if (text.includes(" gambar ")) {
-          text = text.replace(/ gambar \S+/, ` gambar ${intipUrl}`);
+          text = text.replace(/ gambar \S+/, ` gambar ${viewUrl}`);
         } else {
-          text += ` gambar ${intipUrl}`;
+          text += ` gambar ${viewUrl}`;
         }
         e.shareText.textContent = text;
+        toast("Sesi web pratinjau 1 hari siap dibagikan!", "success");
       }
     }
-    toast("Sesi intip 1 hari siap dibagikan!", "success");
     await shareText(text);
   } finally {
     e.share.disabled = false;
@@ -2864,19 +2883,29 @@ e.copy.onclick = async () => {
 
   try {
     let text = e.shareText.textContent;
-    if (lastSavedImageKey) {
-      const intipUrl = await getOrGenerateIntipUrl(lastSavedImageKey);
-      if (intipUrl) {
+    const targetKey = lastSavedImageKey || (text.match(/images\/\d{4}\/\d{2}\/\d{2}\/[^?#\s]+/) ? text.match(/images\/\d{4}\/\d{2}\/\d{2}\/[^?#\s]+/)[0] : "");
+
+    if (lastSavedViewUrl) {
+      if (text.includes(" gambar ")) {
+        text = text.replace(/ gambar \S+/, ` gambar ${lastSavedViewUrl}`);
+      } else {
+        text += ` gambar ${lastSavedViewUrl}`;
+      }
+      e.shareText.textContent = text;
+    } else if (targetKey) {
+      const viewUrl = await getOrGenerateIntipUrl(targetKey);
+      if (viewUrl) {
+        lastSavedViewUrl = viewUrl;
         if (text.includes(" gambar ")) {
-          text = text.replace(/ gambar \S+/, ` gambar ${intipUrl}`);
+          text = text.replace(/ gambar \S+/, ` gambar ${viewUrl}`);
         } else {
-          text += ` gambar ${intipUrl}`;
+          text += ` gambar ${viewUrl}`;
         }
         e.shareText.textContent = text;
       }
     }
     await navigator.clipboard.writeText(text);
-    toast("Teks struk & link intip 1 hari berhasil disalin", "success");
+    toast("Teks struk & tautan pratinjau 1 hari berhasil disalin", "success");
   } finally {
     e.copy.disabled = false;
     e.copy.textContent = originalText;

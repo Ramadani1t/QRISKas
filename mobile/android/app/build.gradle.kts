@@ -13,8 +13,8 @@ android {
         applicationId = "id.qriskas.mobile"
         minSdk = 26
         targetSdk = 33
-        versionCode = 15
-        versionName = "1.7.4"
+        versionCode = 16
+        versionName = "1.7.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
