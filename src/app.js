@@ -2091,6 +2091,7 @@ async function loadHistory(init=false){
     applySettingsUI(loadSettings());
 
     if(data.role==="guest"){
+      if(data.guestExpiresIn) startGuestTimer(data.guestExpiresIn);
       e.scanTab.style.display="none";
       if(!e.scanPage.classList.contains("hidden")){
         stopCamera();
@@ -2099,6 +2100,8 @@ async function loadHistory(init=false){
         e.scanTab.classList.remove("active");
         e.historyTab.classList.add("active");
       }
+    } else {
+      stopGuestTimer();
     }
 
     if(!data.records.length){
@@ -2278,16 +2281,20 @@ async function loadHistory(init=false){
       }
     }
 
+    const historyLinkText = data.rekapUrl
+      ? (compact ? `\n\n*Bukti Riwayat:*\n${data.rekapUrl}` : `\n\n*Link Bukti Riwayat Lengkap (Sesi 2 Hari):*\n${data.rekapUrl}`)
+      : "";
+
     let expenseRecapText="";
     if(expenseCount>0){
       expenseRecapText=compact
-        ?`\n\n*Belanja Cash (${expenseCount} nota): Rp${rupiah(expenseTotal)}*\n${expenseLines.join("\n")}\n\nNota:\n${expenseLinks.join("\n")}`
-        :`\n\n*--- DOKUMENTASI STRUK BELANJA CASH (LACI FISIK) ---*\n${expenseLines.map(l=>l.replace(/^• /,"• [CASH] ")).join("\n")}\n*Total Belanja Cash: Rp${rupiah(expenseTotal)} (${expenseCount} nota)*\n_(Biaya pengeluaran cash kasir, murni arsip & tidak memotong saldo QRIS bank)_\n\nFoto Nota Belanja:\n${expenseLinks.join("\n")}`;
+        ?`\n\n*Belanja Cash (${expenseCount} nota): Rp${rupiah(expenseTotal)}*\n${expenseLines.join("\n")}`
+        :`\n\n*--- DOKUMENTASI STRUK BELANJA CASH (LACI FISIK) ---*\n${expenseLines.map(l=>l.replace(/^• /,"• [CASH] ")).join("\n")}\n*Total Belanja Cash: Rp${rupiah(expenseTotal)} (${expenseCount} nota)*\n_(Biaya pengeluaran cash kasir, murni arsip & tidak memotong saldo QRIS bank)_`;
     }
 
     recapText=compact
-      ?`*REKAP QRIS ${titleDate(date)}*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}\n\nBukti:\n${links.join("\n")}${expenseRecapText}`
-      :`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}\n\nLink bukti:\n${links.join("\n")}${expenseRecapText}`;
+      ?`*REKAP QRIS ${titleDate(date)}*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseRecapText}${historyLinkText}`
+      :`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseRecapText}${historyLinkText}`;
     if(e.recapSalesTotal)e.recapSalesTotal.textContent=`Rp${rupiah(salesTotal)}`;
     if(e.recapSurplusTotal)e.recapSurplusTotal.textContent=`+Rp${rupiah(surplusTotal)}`;
     if(e.recapCashoutTotal)e.recapCashoutTotal.textContent=`-Rp${rupiah(cashoutTotal)}`;
@@ -2839,8 +2846,20 @@ if(isSecureContext() && "mediaDevices" in navigator){
   startCamera();
   getAllVideoInputDevices(true).catch(()=>{});
 }
-e.historyDate.value=localDate();
-loadHistory(true);
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.has("date")) {
+  const d = urlParams.get("date");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    e.historyDate.value = d;
+  }
+} else {
+  e.historyDate.value = localDate();
+}
+if (urlParams.get("tab") === "history" || urlParams.has("date")) {
+  showPage("history");
+} else {
+  loadHistory(true);
+}
 updatePendingBadge();
 
 // === NATIVE ANDROID HARDWARE CAMERA BRIDGE CALLBACK (Persis DStock) ===
@@ -3532,9 +3551,19 @@ function startGuestTimer(initialSeconds) {
 
   let remaining = Math.max(1, Math.round(Number(initialSeconds) || 900));
   function updateDisplay() {
-    const m = Math.floor(remaining / 60);
-    const s = remaining % 60;
-    countdownEl.textContent = `Sisa: ${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    if (remaining >= 86400) {
+      const days = Math.floor(remaining / 86400);
+      const hours = Math.floor((remaining % 86400) / 3600);
+      countdownEl.textContent = `Sisa: ${days} hari ${hours} jam`;
+    } else if (remaining >= 3600) {
+      const hours = Math.floor(remaining / 3600);
+      const mins = Math.floor((remaining % 3600) / 60);
+      countdownEl.textContent = `Sisa: ${hours} jam ${mins} mnt`;
+    } else {
+      const m = Math.floor(remaining / 60);
+      const s = remaining % 60;
+      countdownEl.textContent = `Sisa: ${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
   }
   updateDisplay();
 

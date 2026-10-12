@@ -447,6 +447,39 @@ export default {
       });
     }
 
+    // === ROUTE LINK SESI RIWAYAT TRANSAKSI 2 HARI (GUEST REKAP) ===
+    if (url.pathname === "/rekap" || url.pathname === "/riwayat") {
+      const date = url.searchParams.get("date") || "";
+      const expStr = url.searchParams.get("exp") || "";
+      const sig = url.searchParams.get("sig") || "";
+
+      if (!date || !expStr || !sig || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return renderWebViewerPage({ error: "Tautan sesi riwayat transaksi tidak valid.", origin: url.origin });
+      }
+
+      const exp = Number(expStr);
+      const now = Math.floor(Date.now() / 1000);
+      if (!exp || isNaN(exp) || exp < now) {
+        return renderWebViewerPage({
+          error: "Sesi tautan riwayat transaksi ini telah kedaluwarsa (berlaku 2 hari). Silakan minta kasir membagikan rekap terbaru.",
+          origin: url.origin
+        });
+      }
+
+      const payload = `rekap:${date}:${exp}`;
+      const expectedSig = await sign(payload, env.AUTH_SECRET);
+      if (sig !== expectedSig) {
+        return renderWebViewerPage({ error: "Tanda tangan tautan riwayat tidak valid atau telah dimodifikasi.", origin: url.origin });
+      }
+
+      const remainingSeconds = Math.max(60, exp - now);
+      const cookie = await sessionCookie("guest", env.AUTH_SECRET, remainingSeconds);
+      const response = new Response(null, { status: 302 });
+      response.headers.append("location", `/?date=${encodeURIComponent(date)}&tab=history`);
+      response.headers.append("set-cookie", `qris_session=${cookie}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${remainingSeconds}`);
+      return response;
+    }
+
     // === PUBLIC VIEW WITH EXPIRING TOKEN (Tanpa Perlu Login) ===
     if (url.pathname === "/view" || url.pathname === "/v" || url.pathname === "/view/raw" || url.pathname === "/v/raw") {
       let key = url.searchParams.get("key") || "";
@@ -565,12 +598,20 @@ export default {
           };
         }))).filter(Boolean).sort((a, b) => a.savedAt.localeCompare(b.savedAt));
         const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
+
+        // Buat link sesi riwayat transaksi 2 hari (48 jam)
+        const expDays = 2;
+        const exp = Math.floor(Date.now() / 1000) + 86400 * expDays;
+        const sig = await sign(`rekap:${requested}:${exp}`, env.AUTH_SECRET);
+        const rekapUrl = `${url.origin}/rekap?date=${encodeURIComponent(requested)}&exp=${exp}&sig=${sig}`;
+
         return json({
           role,
           sessionExpires,
           guestExpiresIn: role === "guest" && sessionExpires ? Math.max(0, sessionExpires - Math.floor(Date.now() / 1000)) : null,
           date: requested,
-          records: records.map(record => ({ ...record, imageUrl: `${publicBase}/${record.imageKey}` }))
+          rekapUrl,
+          records: records.map(record => ({ ...record, imageUrl: `${publicBase || url.origin}/${record.imageKey}` }))
         });
       } catch (error) {
         return json({ error: "Gagal mengambil riwayat.", detail: error.message }, 500);
@@ -867,8 +908,7 @@ export default {
         const viewUrl = makeViewUrl(url.origin, imageKey, token.exp, token.sig);
         const rawViewUrl = makeRawViewUrl(url.origin, imageKey, token.exp, token.sig);
         const publicBase = String(env.R2_PUBLIC_URL || "").replace(/\/$/, "");
-        if (!publicBase || publicBase.includes("example.com")) return json({ error: "R2_PUBLIC_URL belum diatur.", saved: true }, 500);
-        return json({ amount, savedAt, isSurplus, isCashout, isRevised, isExpense, note, imageKey, recordKey, imageUrl: `${publicBase}/${imageKey}`, viewUrl, rawViewUrl });
+        return json({ amount, savedAt, isSurplus, isCashout, isRevised, isExpense, note, imageKey, recordKey, imageUrl: `${publicBase || url.origin}/${imageKey}`, viewUrl, rawViewUrl });
       } catch (error) {
         return json({ error: "Gagal menyimpan bukti. Coba lagi.", detail: error.message }, 500);
       }
