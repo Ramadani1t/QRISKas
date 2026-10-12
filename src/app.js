@@ -43,39 +43,6 @@ const ids=[
 const e=Object.fromEntries(ids.map(id=>[id,$(id)]));
 let stream,imageBlob,amount=0;
 
-let lastSavedImageKey = "";
-let lastSavedViewUrl = "";
-async function getOrGenerateIntipUrl(keyOrUrl) {
-  if (!keyOrUrl) return "";
-  let key = String(keyOrUrl).trim();
-  // Jika sudah berupa web pratinjau yang valid (/view?key=...&sig=...), langsung gunakan
-  if ((key.includes("/view?") || key.includes("/v?")) && key.includes("sig=")) {
-    return key;
-  }
-  if (key.includes("/images/")) {
-    const m = key.match(/images\/\d{4}\/\d{2}\/\d{2}\/[^?#\s]+/);
-    if (m) key = m[0];
-  }
-  if (!key.startsWith("images/")) return keyOrUrl;
-
-  try {
-    toast("Membuat sesi web pratinjau 1 hari...", "loading");
-    const startTime = Date.now();
-    const res = await fetch(`/api/intip-session?key=${encodeURIComponent(key)}`);
-    const elapsed = Date.now() - startTime;
-    // Beri jeda wajar (minimal ~650ms) agar pembuatan token/sesi terasa mantap
-    if (elapsed < 650) {
-      await new Promise(r => setTimeout(r, 650 - elapsed));
-    }
-    if (res.ok) {
-      const data = await res.json();
-      if (data.viewUrl) return data.viewUrl;
-      if (data.intipUrl) return data.intipUrl;
-    }
-  } catch (_) {}
-  return keyOrUrl;
-}
-
 let recapText="",originalTime="",originalDate="",pendingDeleteRecord=null,pendingEditRecord=null;
 let inputSource="camera";
 let currentFacingMode=localStorage.getItem("preferredFacingMode")||"environment";
@@ -1087,9 +1054,7 @@ async function save(){
 
     const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(data.savedAt));
     const line=formatReceiptLine(time,data.amount,data.isSurplus,data.isCashout,data.isRevised,data.note,data.isExpense);
-    lastSavedImageKey = data.imageKey || "";
-    lastSavedViewUrl = data.viewUrl || "";
-    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     e.result.classList.add("hidden");
     e.success.classList.remove("hidden");
     e.success.scrollIntoView({behavior:"smooth"});
@@ -1393,9 +1358,7 @@ async function saveSurplus(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,true,false,false,data.note);
-    lastSavedImageKey = data.imageKey || "";
-    lastSavedViewUrl = data.viewUrl || "";
-    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     if(e.surplusDialog)e.surplusDialog.close();
 
     e.result.classList.add("hidden");
@@ -1510,9 +1473,7 @@ async function saveCashout(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,true,data.isRevised,data.note);
-    lastSavedImageKey = data.imageKey || "";
-    lastSavedViewUrl = data.viewUrl || "";
-    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     if(e.cashoutDialog)e.cashoutDialog.close();
 
     e.result.classList.add("hidden");
@@ -1712,9 +1673,7 @@ async function saveRevised(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,false,true,data.note);
-    lastSavedImageKey = data.imageKey || "";
-    lastSavedViewUrl = data.viewUrl || "";
-    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     if(e.revisedDialog)e.revisedDialog.close();
 
     e.result.classList.add("hidden");
@@ -1917,9 +1876,7 @@ async function saveExpense(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,false,false,data.note,true);
-    lastSavedImageKey = data.imageKey || "";
-    lastSavedViewUrl = data.viewUrl || "";
-    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     if(e.expenseDialog)e.expenseDialog.close();
 
     e.result.classList.add("hidden");
@@ -2185,14 +2142,12 @@ async function loadHistory(init=false){
       const line=formatReceiptLine(time,r.amount,isSurplus,isCashout,isRevised,r.note,isExpense);
       const recapLine=loadSettings().recapCompact?formatReceiptLineCompact(time,r.amount,isSurplus,isCashout,isRevised,r.note,isExpense):line;
 
-      const recordWebLink = r.viewUrl || r.imageUrl;
-
       if(isExpense){
         expenseLines.push(`• ${recapLine}`);
-        expenseLinks.push(`• Nota Cash: ${recordWebLink}`);
+        expenseLinks.push(`• Nota Cash: ${r.imageUrl}`);
       }else{
         lines.push(`${lines.length+1}. ${recapLine}`);
-        links.push(`${links.length+1}. ${recordWebLink}`);
+        links.push(`${links.length+1}. ${r.imageUrl}`);
 
         if(!isSurplus && !isCashout){
           if(!groupMap.has(r.amount)){
@@ -2217,7 +2172,7 @@ async function loadHistory(init=false){
       const noteHtml=r.note?`<div class="history-item-note" title="${safeNote}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><span>${safeNote}</span></div>`:"";
       const adminActionsHtml=data.role==="admin"?`<button class="edit-record" type="button" aria-label="Edit transaksi">Edit</button><button class="delete-record" type="button" aria-label="Hapus transaksi">Hapus</button>`:"";
 
-      item.innerHTML=`<img class="history-item-thumb" src="${r.imageUrl}" alt="Bukti ${isExpense?"Struk Belanja Cash":isSurplus?"Surplus":isCashout?"Tukar Cash":"QRIS"}" loading="lazy"><div class="history-item-body"><div class="history-item-header"><div class="history-item-meta"><time class="history-item-time">${time} WIB</time>${expenseBadgeHtml}${surplusBadgeHtml}${cashoutBadgeHtml}${revisedBadgeHtml}</div><div class="history-item-actions"><button class="copy-record" type="button" title="Salin transaksi ini">Salin</button>${adminActionsHtml}</div></div><strong class="history-item-amount">${isExpense?"-":""}Rp${rupiah(r.amount)}</strong>${noteHtml}<a class="history-item-link" href="${recordWebLink}" target="_blank" rel="noopener"><span>Lihat foto bukti</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></div>`;
+      item.innerHTML=`<img class="history-item-thumb" src="${r.imageUrl}" alt="Bukti ${isExpense?"Struk Belanja Cash":isSurplus?"Surplus":isCashout?"Tukar Cash":"QRIS"}" loading="lazy"><div class="history-item-body"><div class="history-item-header"><div class="history-item-meta"><time class="history-item-time">${time} WIB</time>${expenseBadgeHtml}${surplusBadgeHtml}${cashoutBadgeHtml}${revisedBadgeHtml}</div><div class="history-item-actions"><button class="copy-record" type="button" title="Salin transaksi ini">Salin</button>${adminActionsHtml}</div></div><strong class="history-item-amount">${isExpense?"-":""}Rp${rupiah(r.amount)}</strong>${noteHtml}<a class="history-item-link" href="${r.imageUrl}" target="_blank" rel="noopener"><span>Lihat foto bukti</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></div>`;
 
       const previewMeta = {
         title: isExpense ? "Nota Belanja Cash" : isSurplus ? "Bukti Surplus Kas" : isCashout ? "Bukti Tukar Cash" : isRevised ? "Bukti Transaksi Revisi" : "Bukti Pembayaran QRIS",
@@ -2248,21 +2203,9 @@ async function loadHistory(init=false){
         };
       }
 
-      item.querySelector(".copy-record").onclick = async (ev) => {
-        const btn = ev.currentTarget;
-        const oldText = btn.textContent;
-        btn.disabled = true;
-        btn.textContent = "⏳...";
-        try {
-          let textLine = line;
-          const viewLink = r.viewUrl || (r.imageKey ? await getOrGenerateIntipUrl(r.imageKey) : r.imageUrl);
-          textLine += ` gambar ${viewLink}`;
-          await navigator.clipboard.writeText(textLine);
-          toast("Rincian transaksi & tautan pratinjau 1 hari disalin", "success");
-        } finally {
-          btn.disabled = false;
-          btn.textContent = oldText;
-        }
+      item.querySelector(".copy-record").onclick = async () => {
+        await navigator.clipboard.writeText(`${line} gambar ${r.imageUrl}`);
+        toast("Rincian transaksi berhasil disalin", "success");
       };
       if(data.role==="admin"){
         item.querySelector(".edit-record").onclick=()=>openEditRecord(r);
@@ -2839,77 +2782,10 @@ if(e.toggleConfirmExpenseBtn){
   };
 }
 
-e.share.onclick = async () => {
-  const originalText = e.share.textContent;
-  e.share.disabled = true;
-  e.share.textContent = "⏳ Membuat Sesi...";
-
-  try {
-    let text = e.shareText.textContent;
-    const targetKey = lastSavedImageKey || (text.match(/images\/\d{4}\/\d{2}\/\d{2}\/[^?#\s]+/) ? text.match(/images\/\d{4}\/\d{2}\/\d{2}\/[^?#\s]+/)[0] : "");
-
-    if (lastSavedViewUrl) {
-      if (text.includes(" gambar ")) {
-        text = text.replace(/ gambar \S+/, ` gambar ${lastSavedViewUrl}`);
-      } else {
-        text += ` gambar ${lastSavedViewUrl}`;
-      }
-      e.shareText.textContent = text;
-      toast("Sesi web pratinjau 1 hari siap dibagikan!", "success");
-    } else if (targetKey) {
-      const viewUrl = await getOrGenerateIntipUrl(targetKey);
-      if (viewUrl) {
-        lastSavedViewUrl = viewUrl;
-        if (text.includes(" gambar ")) {
-          text = text.replace(/ gambar \S+/, ` gambar ${viewUrl}`);
-        } else {
-          text += ` gambar ${viewUrl}`;
-        }
-        e.shareText.textContent = text;
-        toast("Sesi web pratinjau 1 hari siap dibagikan!", "success");
-      }
-    }
-    await shareText(text);
-  } finally {
-    e.share.disabled = false;
-    e.share.textContent = originalText;
-  }
-};
-
-e.copy.onclick = async () => {
-  const originalText = e.copy.textContent;
-  e.copy.disabled = true;
-  e.copy.textContent = "⏳ Membuat Sesi...";
-
-  try {
-    let text = e.shareText.textContent;
-    const targetKey = lastSavedImageKey || (text.match(/images\/\d{4}\/\d{2}\/\d{2}\/[^?#\s]+/) ? text.match(/images\/\d{4}\/\d{2}\/\d{2}\/[^?#\s]+/)[0] : "");
-
-    if (lastSavedViewUrl) {
-      if (text.includes(" gambar ")) {
-        text = text.replace(/ gambar \S+/, ` gambar ${lastSavedViewUrl}`);
-      } else {
-        text += ` gambar ${lastSavedViewUrl}`;
-      }
-      e.shareText.textContent = text;
-    } else if (targetKey) {
-      const viewUrl = await getOrGenerateIntipUrl(targetKey);
-      if (viewUrl) {
-        lastSavedViewUrl = viewUrl;
-        if (text.includes(" gambar ")) {
-          text = text.replace(/ gambar \S+/, ` gambar ${viewUrl}`);
-        } else {
-          text += ` gambar ${viewUrl}`;
-        }
-        e.shareText.textContent = text;
-      }
-    }
-    await navigator.clipboard.writeText(text);
-    toast("Teks struk & tautan pratinjau 1 hari berhasil disalin", "success");
-  } finally {
-    e.copy.disabled = false;
-    e.copy.textContent = originalText;
-  }
+e.share.onclick=()=>shareText(e.shareText.textContent);
+e.copy.onclick=async()=>{
+  await navigator.clipboard.writeText(e.shareText.textContent);
+  toast("Teks struk berhasil disalin","success");
 };
 e.shareRecap.onclick=()=>shareText(recapText);
 e.copyRecap.onclick=async()=>{await navigator.clipboard.writeText(recapText);toast("Rekap harian berhasil disalin","success");};
@@ -3097,30 +2973,8 @@ function resetPreviewTransform() {
   updatePreviewTransform();
 }
 
-async function getOrFetchViewUrl() {
-  if (currentViewUrl) return currentViewUrl;
-  if (!currentPreviewUrl) return "";
-  if (currentPreviewUrl.startsWith("blob:") || currentPreviewUrl.startsWith("data:")) {
-    return "";
-  }
-  let key = currentImageKey;
-  if (!key) {
-    const keyMatch = currentPreviewUrl.match(/images\/\d{4}\/\d{2}\/\d{2}\/[^?#]+/);
-    if (keyMatch) key = keyMatch[0];
-  }
-  if (key) {
-    try {
-      const res = await fetch(`/api/share-token?key=${encodeURIComponent(key)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.viewUrl) {
-          currentViewUrl = data.viewUrl;
-          return currentViewUrl;
-        }
-      }
-    } catch (_) {}
-  }
-  return currentPreviewUrl;
+function getOrFetchViewUrl() {
+  return currentPreviewUrl || "";
 }
 
 function openImagePreview(url, meta = {}) {

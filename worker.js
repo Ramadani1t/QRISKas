@@ -379,6 +379,26 @@ export default {
       return env.ASSETS.fetch(request);
     }
 
+    // === DIRECT RAW IMAGE HANDLER (FAST & CACHED) ===
+    if (url.pathname.startsWith("/images/")) {
+      const key = decodeURIComponent(url.pathname.slice(1));
+      const obj = await env.RECEIPTS.get(key);
+      if (!obj) {
+        return new Response("Foto bukti tidak ditemukan.", {
+          status: 404,
+          headers: { "content-type": "text/plain; charset=utf-8" }
+        });
+      }
+      return new Response(obj.body, {
+        status: 200,
+        headers: {
+          "content-type": obj.httpMetadata?.contentType || "image/jpeg",
+          "cache-control": "public, max-age=31536000, immutable",
+          "x-content-type-options": "nosniff"
+        }
+      });
+    }
+
     // === ROUTE LINK INTIP SESI 1 HARI (RAW IMAGE) ===
     if (url.pathname === "/intip" || url.pathname.startsWith("/intip/")) {
       let key = url.searchParams.get("key") || "";
