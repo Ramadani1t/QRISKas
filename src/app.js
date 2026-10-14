@@ -1358,7 +1358,7 @@ async function saveSurplus(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,true,false,false,data.note);
-    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
     if(e.surplusDialog)e.surplusDialog.close();
 
     e.result.classList.add("hidden");
