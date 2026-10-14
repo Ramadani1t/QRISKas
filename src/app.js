@@ -2283,12 +2283,16 @@ async function loadHistory(init=false){
 
     const linksText = links.length ? (compact ? `\n\nBukti:\n${links.join("\n")}` : `\n\nLink bukti:\n${links.join("\n")}`) : "";
 
-    let expenseRecapText="";
+    let expenseDocText="";
+    let expenseLinksText="";
     if(expenseCount>0){
-      const expLinksText = expenseLinks.length ? (compact ? `\n\nNota:\n${expenseLinks.join("\n")}` : `\n\nFoto Nota Belanja:\n${expenseLinks.join("\n")}`) : "";
-      expenseRecapText=compact
-        ?`\n\n*Belanja Cash (${expenseCount} nota): Rp${rupiah(expenseTotal)}*\n${expenseLines.join("\n")}${expLinksText}`
-        :`\n\n*--- DOKUMENTASI STRUK BELANJA CASH (LACI FISIK) ---*\n${expenseLines.map(l=>l.replace(/^• /,"• [CASH] ")).join("\n")}\n*Total Belanja Cash: Rp${rupiah(expenseTotal)} (${expenseCount} nota)*\n_(Biaya pengeluaran cash kasir, murni arsip & tidak memotong saldo QRIS bank)_${expLinksText}`;
+      expenseDocText=compact
+        ?`\n\n*Belanja Cash (${expenseCount} nota): Rp${rupiah(expenseTotal)}*\n${expenseLines.join("\n")}`
+        :`\n\n*--- DOKUMENTASI STRUK BELANJA CASH (LACI FISIK) ---*\n${expenseLines.map(l=>l.replace(/^• /,"• [CASH] ")).join("\n")}\n*Total Belanja Cash: Rp${rupiah(expenseTotal)} (${expenseCount} nota)*\n_(Biaya pengeluaran cash kasir, murni arsip & tidak memotong saldo QRIS bank)_`;
+
+      expenseLinksText=compact
+        ?(expenseLinks.length ? `\n\nNota:\n${expenseLinks.join("\n")}` : "")
+        :(expenseLinks.length ? `\n\nFoto Nota Belanja:\n${expenseLinks.join("\n")}` : "");
     }
 
     const historyLinkText = data.rekapUrl
@@ -2296,8 +2300,8 @@ async function loadHistory(init=false){
       : "";
 
     recapText=compact
-      ?`*REKAP QRIS ${titleDate(date)}*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${linksText}${expenseRecapText}${historyLinkText}`
-      :`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${linksText}${expenseRecapText}${historyLinkText}`;
+      ?`*REKAP QRIS ${titleDate(date)}*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseDocText}${linksText}${expenseLinksText}${historyLinkText}`
+      :`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseDocText}${linksText}${expenseLinksText}${historyLinkText}`;
     if(e.recapSalesTotal)e.recapSalesTotal.textContent=`Rp${rupiah(salesTotal)}`;
     if(e.recapSurplusTotal)e.recapSurplusTotal.textContent=`+Rp${rupiah(surplusTotal)}`;
     if(e.recapCashoutTotal)e.recapCashoutTotal.textContent=`-Rp${rupiah(cashoutTotal)}`;
