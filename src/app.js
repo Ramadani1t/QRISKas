@@ -1473,7 +1473,7 @@ async function saveCashout(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,true,data.isRevised,data.note);
-    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
     if(e.cashoutDialog)e.cashoutDialog.close();
 
     e.result.classList.add("hidden");
@@ -1673,7 +1673,7 @@ async function saveRevised(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,false,true,data.note);
-    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
     if(e.revisedDialog)e.revisedDialog.close();
 
     e.result.classList.add("hidden");
@@ -1876,7 +1876,7 @@ async function saveExpense(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,false,false,data.note,true);
-    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
     if(e.expenseDialog)e.expenseDialog.close();
 
     e.result.classList.add("hidden");
@@ -2300,8 +2300,8 @@ async function loadHistory(init=false){
       : "";
 
     recapText=compact
-      ?`*REKAP QRIS ${titleDate(date)}*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseDocText}${expenseLinksText}${linksText}${historyLinkText}`
-      :`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseDocText}${expenseLinksText}${linksText}${historyLinkText}`;
+      ?`*REKAP QRIS ${titleDate(date)}*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseDocText}${linksText}${expenseLinksText}${historyLinkText}`
+      :`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseDocText}${linksText}${expenseLinksText}${historyLinkText}`;
     if(e.recapSalesTotal)e.recapSalesTotal.textContent=`Rp${rupiah(salesTotal)}`;
     if(e.recapSurplusTotal)e.recapSurplusTotal.textContent=`+Rp${rupiah(surplusTotal)}`;
     if(e.recapCashoutTotal)e.recapCashoutTotal.textContent=`-Rp${rupiah(cashoutTotal)}`;
