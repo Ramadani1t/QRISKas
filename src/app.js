@@ -2144,7 +2144,6 @@ async function loadHistory(init=false){
       const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(r.savedAt));
       const line=formatReceiptLine(time,r.amount,isSurplus,isCashout,isRevised,r.note,isExpense);
       const recapLine=loadSettings().recapCompact?formatReceiptLineCompact(time,r.amount,isSurplus,isCashout,isRevised,r.note,isExpense):line;
-      const recordWebLink = r.imageUrl;
 
       if(isExpense){
         expenseLines.push(`• ${recapLine}`);
@@ -2301,8 +2300,8 @@ async function loadHistory(init=false){
       : "";
 
     recapText=compact
-      ?`*REKAP QRIS ${titleDate(date)}*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseDocText}${expenseLinksText}${linksText}${historyLinkText}`
-      :`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseDocText}${expenseLinksText}${linksText}${historyLinkText}`;
+      ?`*REKAP QRIS ${titleDate(date)}*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseDocText}${linksText}${expenseLinksText}${historyLinkText}`
+      :`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseDocText}${linksText}${expenseLinksText}${historyLinkText}`;
     if(e.recapSalesTotal)e.recapSalesTotal.textContent=`Rp${rupiah(salesTotal)}`;
     if(e.recapSurplusTotal)e.recapSurplusTotal.textContent=`+Rp${rupiah(surplusTotal)}`;
     if(e.recapCashoutTotal)e.recapCashoutTotal.textContent=`-Rp${rupiah(cashoutTotal)}`;
