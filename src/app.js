@@ -2149,11 +2149,11 @@ async function loadHistory(init=false){
 
       if(isExpense){
         expenseLines.push(`• ${recapLine}`);
-        expenseLinks.push(`• Nota Cash: ${recordWebLink}`);
+        expenseLinks.push(`• Nota Cash: ${r.imageUrl}`);
       }else{
         const idx = lines.length + 1;
         lines.push(`${idx}. ${recapLine}`);
-        links.push(`${idx}. ${recordWebLink}`);
+        links.push(`${idx}. ${r.imageUrl}`);
 
         if(!isSurplus && !isCashout){
           if(!groupMap.has(r.amount)){
@@ -2210,7 +2210,7 @@ async function loadHistory(init=false){
       }
 
       item.querySelector(".copy-record").onclick = async () => {
-        await navigator.clipboard.writeText(`${line} gambar ${recordWebLink}`);
+        await navigator.clipboard.writeText(`${line} gambar ${r.imageUrl}`);
         toast("Rincian transaksi & tautan pratinjau disalin", "success");
       };
       if(data.role==="admin"){
@@ -2299,7 +2299,7 @@ async function loadHistory(init=false){
     }
 
     const historyLinkText = data.rekapUrl
-      ? (compact ? `\n\nRiwayat (Mode Intip):\n${data.rekapUrl}` : `\n\nTampilan riwayat (Mode Intip):\n${data.rekapUrl}`)
+      ? (compact ? `\n\nRiwayat:\n${data.rekapUrl}` : `\n\nTampilan riwayat:\n${data.rekapUrl}`)
       : "";
 
     recapText=compact
