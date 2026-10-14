@@ -2292,7 +2292,7 @@ async function loadHistory(init=false){
     }
 
     const historyLinkText = data.rekapUrl
-      ? (compact ? `\n\n*Bukti Riwayat:*\n${data.rekapUrl}` : `\n\n*Link Bukti Riwayat Lengkap (Sesi 2 Hari):*\n${data.rekapUrl}`)
+      ? (compact ? `\n\nRiwayat:\n${data.rekapUrl}` : `\n\nTampilan riwayat:\n${data.rekapUrl}`)
       : "";
 
     recapText=compact
