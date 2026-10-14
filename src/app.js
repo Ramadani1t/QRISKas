@@ -1358,7 +1358,7 @@ async function saveSurplus(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,true,false,false,data.note);
-    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     if(e.surplusDialog)e.surplusDialog.close();
 
     e.result.classList.add("hidden");
@@ -1473,7 +1473,7 @@ async function saveCashout(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,true,data.isRevised,data.note);
-    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     if(e.cashoutDialog)e.cashoutDialog.close();
 
     e.result.classList.add("hidden");
@@ -1673,7 +1673,7 @@ async function saveRevised(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,false,true,data.note);
-    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     if(e.revisedDialog)e.revisedDialog.close();
 
     e.result.classList.add("hidden");
@@ -1876,7 +1876,7 @@ async function saveExpense(ev){
     }).format(new Date(data.savedAt));
 
     const line=formatReceiptLine(time,data.amount,false,false,false,data.note,true);
-    e.shareText.textContent=`${line} gambar ${data.viewUrl || data.imageUrl}`;
+    e.shareText.textContent=`${line} gambar ${data.imageUrl}`;
     if(e.expenseDialog)e.expenseDialog.close();
 
     e.result.classList.add("hidden");
@@ -2144,12 +2144,13 @@ async function loadHistory(init=false){
       const time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Jakarta",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(r.savedAt));
       const line=formatReceiptLine(time,r.amount,isSurplus,isCashout,isRevised,r.note,isExpense);
       const recapLine=loadSettings().recapCompact?formatReceiptLineCompact(time,r.amount,isSurplus,isCashout,isRevised,r.note,isExpense):line;
+      const recordWebLink = r.imageUrl;
 
       if(isExpense){
         expenseLines.push(`• ${recapLine}`);
         expenseLinks.push(`• Nota Cash: ${r.imageUrl}`);
       }else{
-        lines.push(`${lines.length+1}. ${recapLine}`);
+                lines.push(`${lines.length+1}. ${recapLine}`);
         links.push(`${links.length+1}. ${r.imageUrl}`);
 
         if(!isSurplus && !isCashout){
@@ -2175,7 +2176,7 @@ async function loadHistory(init=false){
       const noteHtml=r.note?`<div class="history-item-note" title="${safeNote}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><span>${safeNote}</span></div>`:"";
       const adminActionsHtml=data.role==="admin"?`<button class="edit-record" type="button" aria-label="Edit transaksi">Edit</button><button class="delete-record" type="button" aria-label="Hapus transaksi">Hapus</button>`:"";
 
-      item.innerHTML=`<img class="history-item-thumb" src="${r.imageUrl}" alt="Bukti ${isExpense?"Struk Belanja Cash":isSurplus?"Surplus":isCashout?"Tukar Cash":"QRIS"}" loading="lazy"><div class="history-item-body"><div class="history-item-header"><div class="history-item-meta"><time class="history-item-time">${time} WIB</time>${expenseBadgeHtml}${surplusBadgeHtml}${cashoutBadgeHtml}${revisedBadgeHtml}</div><div class="history-item-actions"><button class="copy-record" type="button" title="Salin transaksi ini">Salin</button>${adminActionsHtml}</div></div><strong class="history-item-amount">${isExpense?"-":""}Rp${rupiah(r.amount)}</strong>${noteHtml}<a class="history-item-link" href="${r.imageUrl}" target="_blank" rel="noopener"><span>Lihat foto bukti</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></div>`;
+      item.innerHTML=`<img class="history-item-thumb" src="${r.imageUrl}" alt="Bukti ${isExpense?"Struk Belanja Cash":isSurplus?"Surplus":isCashout?"Tukar Cash":"QRIS"}" loading="lazy"><div class="history-item-body"><div class="history-item-header"><div class="history-item-meta"><time class="history-item-time">${time} WIB</time>${expenseBadgeHtml}${surplusBadgeHtml}${cashoutBadgeHtml}${revisedBadgeHtml}</div><div class="history-item-actions"><button class="copy-record" type="button" title="Salin transaksi ini">Salin</button>${adminActionsHtml}</div></div><strong class="history-item-amount">${isExpense?"-":""}Rp${rupiah(r.amount)}</strong>${noteHtml}<a class="history-item-link" href="${recordWebLink}" target="_blank" rel="noopener"><span>Lihat foto bukti</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></div>`;
 
       const previewMeta = {
         title: isExpense ? "Nota Belanja Cash" : isSurplus ? "Bukti Surplus Kas" : isCashout ? "Bukti Tukar Cash" : isRevised ? "Bukti Transaksi Revisi" : "Bukti Pembayaran QRIS",
@@ -2208,7 +2209,7 @@ async function loadHistory(init=false){
 
       item.querySelector(".copy-record").onclick = async () => {
         await navigator.clipboard.writeText(`${line} gambar ${r.imageUrl}`);
-        toast("Rincian transaksi berhasil disalin", "success");
+        toast("Rincian transaksi & tautan pratinjau disalin", "success");
       };
       if(data.role==="admin"){
         item.querySelector(".edit-record").onclick=()=>openEditRecord(r);
@@ -2300,8 +2301,8 @@ async function loadHistory(init=false){
       : "";
 
     recapText=compact
-      ?`*REKAP QRIS ${titleDate(date)}*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseDocText}${linksText}${expenseLinksText}${historyLinkText}`
-      :`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseDocText}${linksText}${expenseLinksText}${historyLinkText}`;
+      ?`*REKAP QRIS ${titleDate(date)}*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseDocText}${expenseLinksText}${linksText}${historyLinkText}`
+      :`*REKAP TRANSAKSI QRIS (${titleDate(date)})*\n\n${lines.join("\n")}${groupedSummaryText}\n\n${recapBreakdown.join("\n")}${expenseDocText}${expenseLinksText}${linksText}${historyLinkText}`;
     if(e.recapSalesTotal)e.recapSalesTotal.textContent=`Rp${rupiah(salesTotal)}`;
     if(e.recapSurplusTotal)e.recapSurplusTotal.textContent=`+Rp${rupiah(surplusTotal)}`;
     if(e.recapCashoutTotal)e.recapCashoutTotal.textContent=`-Rp${rupiah(cashoutTotal)}`;
