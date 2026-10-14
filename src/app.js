@@ -2145,12 +2145,15 @@ async function loadHistory(init=false){
       const line=formatReceiptLine(time,r.amount,isSurplus,isCashout,isRevised,r.note,isExpense);
       const recapLine=loadSettings().recapCompact?formatReceiptLineCompact(time,r.amount,isSurplus,isCashout,isRevised,r.note,isExpense):line;
 
+      const recordWebLink = r.viewUrl || r.imageUrl;
+
       if(isExpense){
         expenseLines.push(`• ${recapLine}`);
-        expenseLinks.push(`• Nota Cash: ${r.imageUrl}`);
+        expenseLinks.push(`• Nota Cash: ${recordWebLink}`);
       }else{
-                lines.push(`${lines.length+1}. ${recapLine}`);
-        links.push(`${links.length+1}. ${r.imageUrl}`);
+        const idx = lines.length + 1;
+        lines.push(`${idx}. ${recapLine}`);
+        links.push(`${idx}. ${recordWebLink}`);
 
         if(!isSurplus && !isCashout){
           if(!groupMap.has(r.amount)){
@@ -2207,7 +2210,7 @@ async function loadHistory(init=false){
       }
 
       item.querySelector(".copy-record").onclick = async () => {
-        await navigator.clipboard.writeText(`${line} gambar ${r.imageUrl}`);
+        await navigator.clipboard.writeText(`${line} gambar ${recordWebLink}`);
         toast("Rincian transaksi & tautan pratinjau disalin", "success");
       };
       if(data.role==="admin"){
@@ -2296,7 +2299,7 @@ async function loadHistory(init=false){
     }
 
     const historyLinkText = data.rekapUrl
-      ? (compact ? `\n\nRiwayat:\n${data.rekapUrl}` : `\n\nTampilan riwayat:\n${data.rekapUrl}`)
+      ? (compact ? `\n\nRiwayat (Mode Intip):\n${data.rekapUrl}` : `\n\nTampilan riwayat (Mode Intip):\n${data.rekapUrl}`)
       : "";
 
     recapText=compact
